@@ -1,0 +1,15 @@
+# Build-Ergebnisse
+*.exe
+*.pdb
+windows/build/
+windows/dist/
+# Website
+website/node_modules/
+website/.next/
+website/.env*
+!website/.env.example
+# Geheimnisse
+*.dpapi
+.env
+.env.*
+!.env.example
