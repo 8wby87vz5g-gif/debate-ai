@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Net;
@@ -27,7 +27,7 @@ namespace DebateAI
         private readonly NumericUpDown threshold = new NumericUpDown { Minimum = -60, Maximum = -15, Value = -40, Width = 60 };
         private readonly NumericUpDown guard = new NumericUpDown { Minimum = 400, Maximum = 2500, Value = 900, Increment = 100, Width = 65 };
         private readonly NumericUpDown turnSeconds = new NumericUpDown { Minimum = 5, Maximum = 60, Value = 12, Width = 55, AccessibleName = "Maximale Redezeit in Sekunden" };
-        private readonly Button refresh = Button("Geräte neu laden"), key = Button("API-Schlüssel"), log = Button("Protokollordner");
+        private readonly Button refresh = Button("Geräte neu laden"), setup = Button("Voicemeeter-Geräte finden"), routing = Button("Routing-Hilfe"), key = Button("API-Schlüssel"), log = Button("Protokollordner");
         private readonly Button start = Button("Start"), pause = Button("Pause"), stop = Button("Not-Aus (Esc)");
         private readonly Button moderate = Button("Ruhe in der Debatte");
         private readonly Button push = Button("Aufnahme starten"), monitor = Button("Pegel prüfen"), tone = Button("Testton");
@@ -58,6 +58,8 @@ namespace DebateAI
             Compose();
 
             refresh.Click += delegate { RefreshDevices(); };
+            setup.Click += delegate { SelectTikTokDevices(); };
+            routing.Click += delegate { ShowRoutingHelp(); };
             key.Click += delegate { EditKey(); };
             log.Click += delegate { OpenLog(); };
             start.Click += async delegate
@@ -103,7 +105,8 @@ namespace DebateAI
             mode.SelectedIndex = 0;
             devices.Controls.Add(Label("Sprecherwechsel"), 0, 2); devices.Controls.Add(mode, 1, 2);
             main.Controls.Add(devices);
-            main.Controls.Add(Row(refresh, monitor, tone));
+            main.Controls.Add(Row(refresh, setup, routing));
+            main.Controls.Add(Row(monitor, tone));
             main.Controls.Add(Row(Label("Schwelle (dBFS)"), threshold, Label("Nachlauf (ms)"), guard));
             main.Controls.Add(Row(fairness, Label("Redezeit (Sek.)"), turnSeconds));
             main.Controls.Add(Row(offline, key, log));
@@ -123,6 +126,81 @@ namespace DebateAI
             Render();
         }
 
+        // Selects device names, not Voicemeeter routes. The user must still configure
+        // buses in Voicemeeter and verify separation before going live.
+        private static int FindDevice(ComboBox devices, params string[] names)
+        {
+            for (int n = 0; n < names.Length; n++)
+                for (int i = 0; i < devices.Items.Count; i++)
+                {
+                    Device candidate = devices.Items[i] as Device;
+                    if (candidate != null && candidate.Name.IndexOf(names[n], StringComparison.OrdinalIgnoreCase) >= 0)
+                        return i;
+                }
+            return -1;
+        }
+
+        // Normal Voicemeeter provides only B1. Banana supports a separate B2 bus.
+        // Never silently pretend that B1 alone provides two independent live paths.
+        private void SelectTikTokDevices()
+        {
+            RefreshDevices();
+            int bananaInput = FindDevice(input, "Voicemeeter Out B2", "Voicemeeter AUX Output", "Voicemeeter AUX Out");
+            int bananaOutput = FindDevice(output, "Voicemeeter AUX Input", "Voicemeeter AUX In");
+            bool banana = bananaInput >= 0 && bananaOutput >= 0;
+            if (banana)
+            {
+                input.SelectedIndex = bananaInput;
+                output.SelectedIndex = bananaOutput;
+                MessageBox.Show(this, "Banana-Geräte erkannt und ausgewählt.\n\n" + RoutingInstructionsBanana(),
+                    "DEBATE AI · Banana", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            int standardInput = FindDevice(input, "Voicemeeter Out B1", "Voicemeeter Output");
+            if (standardInput >= 0) input.SelectedIndex = standardInput;
+            // In the one-bus edition an automatic NOVA output selection can create a loop.
+            // Require deliberate selection of physical headphones/speakers for local tests.
+            output.SelectedIndex = -1;
+            MessageBox.Show(this,
+                (standardInput >= 0 ? "Normales Voicemeeter erkannt: B1 als Eingang ausgewählt.\n\n" :
+                    "Kein passender Voicemeeter-B1-Eingang gefunden. Geräte neu laden und Eingang von Hand wählen.\n\n") +
+                RoutingInstructionsStandard(), "DEBATE AI · Standard-Voicemeeter",
+                MessageBoxButtons.OK, standardInput >= 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        private static string RoutingInstructionsStandard()
+        {
+            return "STANDARD-VOICEMEETER (nur A / B): NUR LOKAL TESTEN!\n\n" +
+                   "1. NOVA-Eingang: Voicemeeter Out B1 wählen.\n" +
+                   "2. In Voicemeeter am YouTube-/Gast-Kanal B AN; A nach Bedarf.\n" +
+                   "3. NOVA-Ausgang: deine echten Kopfhörer/Lautsprecher wählen, NICHT Voicemeeter Input/VAIO.\n" +
+                   "4. YouTube starten, selbst still sein, dann 'Pegel prüfen'.\n" +
+                   "5. Testton prüfen. Falls NOVA sich selbst hört, sofort 'Not-Aus' drücken.\n\n" +
+                   "ACHTUNG: Ein einzelner B-Bus trennt Gast und NOVA nicht zuverlässig für TikTok LIVE. " +
+                   "Für einen sicheren Livestream sind getrennte Audiowege nötig, z. B. Banana oder ein geeigneter virtueller Audiotreiber.";
+        }
+
+        private static string RoutingInstructionsBanana()
+        {
+            return "BANANA (getrennte Busse):\n\n" +
+                   "1. Gast-Audio → Voicemeeter VAIO: A1 und B2 AN, B1 AUS.\n" +
+                   "2. NOVA-Ausgabe → Voicemeeter AUX: B1 AN, B2 AUS; A1 nach Bedarf.\n" +
+                   "3. LIVE Studio: B1 genau einmal als KI-Mikrofonquelle.\n" +
+                   "4. Gasttest: DEBATE-AI-Eingangspegel reagiert, B1 bleibt still.\n" +
+                   "5. Testton: B1 reagiert, B2 und DEBATE-AI-Eingang bleiben still.\n\n" +
+                   "Nicht live gehen, solange ein Signal zum eigenen Eingang zurückläuft. " +
+                   "TikTok muss den Gastton separat ausgeben können; dies ist nicht bei jedem Setup möglich.";
+        }
+
+        private void ShowRoutingHelp()
+        {
+            bool banana = FindDevice(input, "Voicemeeter Out B2", "Voicemeeter AUX Output") >= 0 &&
+                          FindDevice(output, "Voicemeeter AUX Input") >= 0;
+            MessageBox.Show(this, banana ? RoutingInstructionsBanana() : RoutingInstructionsStandard(),
+                "DEBATE AI · Echo vermeiden", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
         private ICapture OpenInput() { return new WaveCapture(WinAudio.Resolve(true, input.SelectedItem as Device)); }
         private IPlayback OpenOutput() { return new WavePlayback(WinAudio.Resolve(false, output.SelectedItem as Device)); }
         private IDebater CreateDebater()
@@ -137,7 +215,8 @@ namespace DebateAI
             bool hasInput = input.SelectedItem != null;
             bool hasOutput = output.SelectedItem != null;
             bool measuring = session.State == Phase.Meter;
-            input.Enabled = output.Enabled = mode.Enabled = threshold.Enabled = guard.Enabled = refresh.Enabled = offline.Enabled = key.Enabled = ready;
+            input.Enabled = output.Enabled = mode.Enabled = threshold.Enabled = guard.Enabled = refresh.Enabled = setup.Enabled = offline.Enabled = key.Enabled = ready;
+            routing.Enabled = true;
             fairness.Enabled = turnSeconds.Enabled = ready;
             informed.Enabled = ready && !offline.Checked;
             start.Enabled = ready && hasInput && hasOutput && (offline.Checked || informed.Checked && LocalData.HasKey);
