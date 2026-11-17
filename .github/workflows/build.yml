@@ -175,7 +175,7 @@ jobs:
   local-e2e:
     name: Lokaler Modus echt unter Windows (whisper.cpp, Ollama, Piper)
     runs-on: windows-latest
-    timeout-minutes: 75
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@v4
       - name: Testprogramm bauen
@@ -202,11 +202,11 @@ jobs:
           for ($i = 0; $i -lt 20; $i++) { try { Invoke-RestMethod http://127.0.0.1:11434/api/version | Out-Null; $up = $true; break } catch { Start-Sleep 1 } }
           if (-not $up) { Start-Process $exe -ArgumentList "serve" -WindowStyle Hidden }
           for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod http://127.0.0.1:11434/api/version; break } catch { Start-Sleep 1 } }
-      - name: Download, Messung und drei Debattenrunden (gemma3:4b, Whisper base)
-        timeout-minutes: 45
+      - name: Download, Messung und drei Debattenrunden je Modell (Whisper base)
+        timeout-minutes: 85
         shell: cmd
         working-directory: windows
-        run: LocalE2E.exe gemma3:4b base
+        run: LocalE2E.exe gemma3:1b,llama3.2:3b,qwen2.5:3b,gemma3:4b base
 
   website:
     name: Website (Typecheck und Build)

@@ -814,6 +814,8 @@ namespace DebateAI
                 foreach (string word in answer.Split(' ')) { token.ThrowIfCancellationRequested(); onDelta(word + " "); }
                 return Task.FromResult(0);
             }
+            public readonly List<string> Warmed = new List<string>();
+            public Task Warm(string system, CancellationToken token) { lock (Warmed) Warmed.Add(system); return Task.FromResult(0); }
         }
 
         private sealed class FakeTts : ITextToSpeech
@@ -893,15 +895,22 @@ namespace DebateAI
                 Check(events.Exists(e => e.Kind == LiveKind.Line && e.Speaker == "Nova") && events[events.Count - 1].Completed, "NOVA-Antwort unvollständig");
                 Check(tts.Spoken.Count == 4 && tts.Spoken[1] == "Das sehe ich anders." && tts.Spoken[3] == "Was spricht für dich dagegen?", "Nicht satzweise gesprochen: " + string.Join("|", tts.Spoken));
                 Check(sink.TotalBytes == 3 * Long(500).Length, "Antwort-Audio fehlt");
-                Check(llm.Requests[0][0].Role == "system" && llm.Requests[0][0].Content.Contains("DEBATTENMETHODE") && llm.Requests[0][1].Content == "Tempo 130 reicht völlig aus.",
+                Check(llm.Requests[0][0].Role == "system" && llm.Requests[0][0].Content.Contains("Gegenargument") && llm.Requests[0][0].Content.Length < 1500 && llm.Requests[0][1].Content == "Tempo 130 reicht völlig aus.",
                     "Sprachmodell bekommt Persona oder Beitrag nicht");
                 stt.Texts.Enqueue("Freiheit ist wichtiger.");
                 ai.Append(Long(600)); ai.Commit();
                 ai.Respond(new AudioSink(), "Bringe die Debatte voran.");
                 Drain(ai, LiveKind.AnswerDone);
                 List<ChatMessage> second = llm.Requests[1];
-                Check(second.Count == 4 && second[2].Role == "assistant" && second[2].Content.StartsWith("Das sehe ich anders.") && second[3].Content == "Freiheit ist wichtiger." &&
-                    second[0].Content.EndsWith("Bringe die Debatte voran."), "Gesprächsverlauf oder Zusatzanweisung fehlt");
+                Check(second.Count == 4 && second[2].Role == "assistant" && second[2].Content.StartsWith("Das sehe ich anders.") &&
+                    second[3].Content == "Freiheit ist wichtiger.\n(Hinweis an dich: Bringe die Debatte voran.)" &&
+                    second[0].Content == llm.Requests[0][0].Content, "Gesprächsverlauf oder Zusatzanweisung fehlt");
+                Check(llm.Warmed.Count == 1 && llm.Warmed[0] == llm.Requests[0][0].Content, "Lokales Modell wurde nicht mit denselben Anweisungen vorgewärmt");
+                Check(LocalDebater.WindowStart(16) == 0 && LocalDebater.WindowStart(19) == 0 && LocalDebater.WindowStart(20) == 12 && LocalDebater.WindowStart(31) == 12 &&
+                    LocalDebater.WindowStart(32) == 24 && 32 - LocalDebater.WindowStart(32) >= 8, "Verlaufsfenster springt nicht in Blöcken");
+                var stats = new Dictionary<string, object> { { "prompt_eval_count", 300 }, { "prompt_eval_duration", 1500000000L }, { "eval_count", 40 }, { "eval_duration", 5000000000L } };
+                Check(OllamaChat.Stats(stats).StartsWith("Prompt 300 Tokens in 1500 ms (200/s) · Antwort 40 Tokens in 5000 ms (8,0/s)") ||
+                    OllamaChat.Stats(stats).StartsWith("Prompt 300 Tokens in 1500 ms (200/s) · Antwort 40 Tokens in 5000 ms (8.0/s)"), "Ollama-Statistik: " + OllamaChat.Stats(stats));
             }
         }
 

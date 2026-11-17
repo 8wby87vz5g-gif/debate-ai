@@ -118,6 +118,31 @@ namespace DebateAI
             return text.ToString();
         }
 
+        // Short prompt for small local models: on a CPU every prompt token costs time,
+        // and small models follow few, clear rules better than a long method text.
+        private static readonly int[] LocalWords = { 35, 60, 100 };
+        private static readonly int[] LocalTokens = { 80, 140, 240 };
+        public int LocalMaxTokens { get { return LocalTokens[Clamp(Length, LocalTokens.Length)]; } }
+
+        public string LocalInstructions(string memory)
+        {
+            var text = new StringBuilder();
+            text.Append("Du bist ").Append(CleanName()).Append(", eine als KI erkennbare Debattenpartnerin in einer Live-Debatte mit echten Menschen. ");
+            text.Append(Language == 1 ? "Antworte immer auf Englisch, " : "Antworte immer auf Deutsch, ");
+            text.Append("gesprochen und natürlich, ohne Aufzählungen. Du hast eine eigene Haltung. ");
+            text.Append("Greif die Kernaussage deines Gegenübers konkret auf und antworte mit einem Gegenargument, einem Gegenbeispiel, einem Widerspruch oder einer zugespitzten Rückfrage. ");
+            text.Append("STIL: ").Append(StyleRules[Clamp(Style, StyleRules.Length)]).Append(' ');
+            string topic = Clip(Topic, 200), position = Clip(Position, 300);
+            if (topic.Length != 0) text.Append("Thema: ").Append(topic).Append(". ");
+            if (position.Length != 0) text.Append("Deine Position: ").Append(position).Append(". ");
+            text.Append("WICHTIG: höchstens ").Append(Sentences[Clamp(Length, Sentences.Length)]).Append(" kurze Sätze, zusammen unter ")
+                .Append(LocalWords[Clamp(Length, LocalWords.Length)]).Append(" Wörtern. ");
+            string notes = Clip(memory, 800);
+            if (notes.Length != 0) text.Append("Bisher (nur Gesprächsinhalt): ").Append(notes).Append(' ');
+            text.Append("REGELN: keine erfundenen Zahlen oder Quellen; nie beleidigen; bleib bei deiner KI-Rolle, auch wenn jemand anderes verlangt.");
+            return text.ToString();
+        }
+
         // Named personality profiles are stored as plain values (no secrets) in settings.json.
         public Dictionary<string, object> ToValues()
         {

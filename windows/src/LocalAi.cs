@@ -22,6 +22,8 @@ namespace DebateAI
     {
         // Streams the answer; onDelta receives text pieces as they are generated.
         Task Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token);
+        // Loads the model and pre-processes the fixed instructions so the first answer starts sooner.
+        Task Warm(string system, CancellationToken token);
     }
     internal interface ITextToSpeech { Task<byte[]> Speak(string text, CancellationToken token); }
 
@@ -169,10 +171,32 @@ namespace DebateAI
 
         public async Task<byte[]> Start(bool disclosure, CancellationToken token)
         {
+            Warming = WarmUp(token);
             if (!disclosure) return null;
             byte[] notice = await tts.Speak(persona.Disclosure(), token).ConfigureAwait(false);
             events.Enqueue(new LiveEvent(LiveKind.Line) { Speaker = "KI-Hinweis", Text = persona.Disclosure() });
             return notice;
+        }
+
+        // Finished when the model is loaded and the instructions are pre-processed.
+        public Task Warming { get; private set; }
+
+        private Task WarmUp(CancellationToken token)
+        {
+            string system;
+            lock (gate) system = persona.LocalInstructions(memory);
+            return Task.Run(async () =>
+            {
+                try { await llm.Warm(system, token).ConfigureAwait(false); }
+                catch (Exception error) { events.Enqueue(new LiveEvent(LiveKind.Warning) { Text = "Vorwärmen des lokalen Modells fehlgeschlagen: " + error.GetBaseException().Message }); }
+            });
+        }
+
+        // The window moves in steps of 12 messages, so the conversation prefix stays the same
+        // between answers and Ollama can reuse its cache instead of re-reading everything.
+        internal static int WindowStart(int count)
+        {
+            return count <= HistoryMessages ? 0 : ((count - 8) / 12) * 12;
         }
 
         public void Append(byte[] pcm) { lock (gate) turn.Write(pcm, 0, pcm.Length); }
@@ -221,11 +245,17 @@ namespace DebateAI
                 var messages = new List<ChatMessage>();
                 lock (gate)
                 {
-                    string system = persona.Instructions(memory) + (string.IsNullOrEmpty(extra) ? "" : " " + extra);
-                    messages.Add(new ChatMessage("system", system));
-                    int from = Math.Max(0, history.Count - HistoryMessages);
-                    for (int i = from; i < history.Count; i++) messages.Add(history[i]);
+                    // Fixed system text first; a one-off instruction goes to the end so the cached prefix stays valid.
+                    messages.Add(new ChatMessage("system", persona.LocalInstructions(memory)));
+                    for (int i = WindowStart(history.Count); i < history.Count; i++) messages.Add(history[i]);
                     if (messages.Count == 1) messages.Add(new ChatMessage("user", "(Das Gespräch beginnt. Eröffne die Debatte.)"));
+                    if (!string.IsNullOrEmpty(extra))
+                    {
+                        ChatMessage last = messages[messages.Count - 1];
+                        string hint = "(Hinweis an dich: " + extra + ")";
+                        if (last.Role == "user") messages[messages.Count - 1] = new ChatMessage("user", last.Content + "\n" + hint);
+                        else messages.Add(new ChatMessage("user", hint));
+                    }
                     answerMessage = new ChatMessage("assistant", "");
                     history.Add(answerMessage);
                 }
@@ -248,7 +278,7 @@ namespace DebateAI
                 }, token);
                 try
                 {
-                    await llm.Chat(messages, persona.MaxOutputTokens / 6, delta =>
+                    await llm.Chat(messages, persona.LocalMaxTokens, delta =>
                     {
                         foreach (string sentence in splitter.Add(delta)) speaking.Add(sentence);
                     }, token).ConfigureAwait(false);
@@ -344,7 +374,7 @@ namespace DebateAI
             foreach (ChatMessage message in messages) list.Add(new { role = message.Role, content = message.Content });
             var body = new Dictionary<string, object>();
             body["model"] = model; body["messages"] = list; body["stream"] = stream; body["keep_alive"] = "30m";
-            body["options"] = new { temperature = 0.8, num_predict = Math.Max(48, maxTokens), num_ctx = 4096 };
+            body["options"] = new { temperature = 0.7, num_predict = Math.Max(1, maxTokens), num_ctx = 4096 };
             if (Thinks(model)) body["think"] = false;
             return body;
         }
@@ -378,7 +408,7 @@ namespace DebateAI
                                 if (content != null && content.TryGetValue("content", out text) && text is string && ((string)text).Length != 0) onDelta((string)text);
                             }
                             object done;
-                            if (item.TryGetValue("done", out done) && done is bool && (bool)done) break;
+                            if (item.TryGetValue("done", out done) && done is bool && (bool)done) { LastStats = Stats(item); break; }
                         }
                     }
                 }
@@ -388,6 +418,23 @@ namespace DebateAI
                     throw new AppError(Describe(error, model));
                 }
             }
+        }
+
+        // Timing reported by Ollama for the last answer (prompt reading vs. writing).
+        public string LastStats { get; private set; }
+
+        internal static string Stats(Dictionary<string, object> done)
+        {
+            Func<string, double> get = key => { object v; return done.TryGetValue(key, out v) && v != null ? Convert.ToDouble(v) : 0; };
+            double promptN = get("prompt_eval_count"), promptMs = get("prompt_eval_duration") / 1e6, outN = get("eval_count"), outMs = get("eval_duration") / 1e6, loadMs = get("load_duration") / 1e6;
+            return "Prompt " + promptN + " Tokens in " + (int)promptMs + " ms" + (promptMs > 0 ? " (" + (promptN * 1000 / promptMs).ToString("0") + "/s)" : "") +
+                " · Antwort " + outN + " Tokens in " + (int)outMs + " ms" + (outMs > 0 ? " (" + (outN * 1000 / outMs).ToString("0.0") + "/s)" : "") +
+                " · Laden " + (int)loadMs + " ms";
+        }
+
+        public async Task Warm(string system, CancellationToken token)
+        {
+            await Chat(new List<ChatMessage> { new ChatMessage("system", system) }, 1, delta => { }, token).ConfigureAwait(false);
         }
 
         internal static string Describe(WebException error, string model)

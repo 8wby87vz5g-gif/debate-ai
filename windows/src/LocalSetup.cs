@@ -327,7 +327,7 @@ namespace DebateAI
 
     internal sealed class BenchmarkResult
     {
-        public int TtsMs, TtsAudioMs, SttMs, LlmFirstSentenceMs, LlmTotalMs, FirstSentenceTtsMs, Words;
+        public int WarmMs, TtsMs, TtsAudioMs, SttMs, LlmFirstSentenceMs, LlmTotalMs, FirstSentenceTtsMs, Words;
         public string Heard = "", Answer = "";
         public int PauseMs = 760;
 
@@ -336,7 +336,7 @@ namespace DebateAI
 
         public string Describe()
         {
-            return "Spracherkennung (5 s Sprache): " + SttMs + " ms · Sprachmodell bis zum ersten Satz: " + LlmFirstSentenceMs + " ms, gesamt " + LlmTotalMs +
+            return "Laden und Vorbereiten (einmalig beim Start): " + WarmMs + " ms\n" + "Spracherkennung (5 s Sprache): " + SttMs + " ms · Sprachmodell bis zum ersten Satz: " + LlmFirstSentenceMs + " ms, gesamt " + LlmTotalMs +
                 " ms · Sprachausgabe erster Satz: " + FirstSentenceTtsMs + " ms (Echtzeitfaktor " +
                 (TtsAudioMs > 0 ? ((double)TtsMs / TtsAudioMs).ToString("0.00") : "?") + ")\n" +
                 "Geschätzte Reaktionszeit lokal (inkl. " + PauseMs + " ms Sprechpause): " + EstimatedResponseMs + " ms\n" +
@@ -352,6 +352,10 @@ namespace DebateAI
         {
             var result = new BenchmarkResult();
             var clock = Stopwatch.StartNew();
+            progress("Sprachmodell wird geladen und vorbereitet …");
+            await llm.Warm(persona.LocalInstructions(null), token).ConfigureAwait(false);
+            result.WarmMs = (int)clock.ElapsedMilliseconds;
+            clock.Restart();
             progress("Sprachausgabe erzeugt Testsatz …");
             byte[] sample = await tts.Speak(Sample, token).ConfigureAwait(false);
             result.TtsMs = (int)clock.ElapsedMilliseconds;
@@ -365,8 +369,8 @@ namespace DebateAI
             var answer = new StringBuilder();
             string first = null;
             clock.Restart();
-            await llm.Chat(new List<ChatMessage> { new ChatMessage("system", persona.Instructions()), new ChatMessage("user", result.Heard.Length == 0 ? Sample : result.Heard) },
-                persona.MaxOutputTokens / 6, delta =>
+            await llm.Chat(new List<ChatMessage> { new ChatMessage("system", persona.LocalInstructions(null)), new ChatMessage("user", result.Heard.Length == 0 ? Sample : result.Heard) },
+                persona.LocalMaxTokens, delta =>
                 {
                     answer.Append(delta);
                     if (first == null)
