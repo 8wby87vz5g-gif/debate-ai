@@ -130,12 +130,20 @@ namespace DebateAI
 
     internal sealed partial class MainForm : Form
     {
-        public const string Version = "0.5.0";
+        public const string Version = "0.6.0";
 
         private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();
         private readonly TextBox personaName = Field(30), topic = Field(300), position = Field(400);
         private readonly CheckBox offline = Check("Offline-Probe (nur Piepton, keine KI)");
+        // 0 = OpenAI Realtime (paid premium), 1 = local AI on this PC (free), 2 = offline rehearsal (beep).
+        private readonly ComboBox aiMode = Combo();
+        private readonly Label modeLabel = new Label { AutoSize = true, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold) };
+        private readonly Label licenseLabel = new Label { AutoSize = true, ForeColor = Theme.Muted, MaximumSize = new Size(460, 0) };
+        private readonly Button localSetup = Button("Lokale KI einrichten"), licenseButton = Button("Lizenz eingeben"), machineButton = Button("Geräte-ID kopieren");
+        private LicenseInfo license = Licensing.Load();
+        private bool LocalMode { get { return aiMode.SelectedIndex == 1; } }
+        private bool CloudMode { get { return aiMode.SelectedIndex == 0; } }
         private readonly CheckBox fairness = Check("Gesprächspartner ausreden lassen");
         private readonly CheckBox transcribe = Check("Live-Mitschrift (für Gedächtnis und Echo-Schutz)");
         private readonly CheckBox echoGuard = Check("Echo-Schutz: eigene Stimme ausblenden");
@@ -224,6 +232,13 @@ namespace DebateAI
             foreach (Control control in new Control[] { input, output, mode })
                 ((ComboBox)control).SelectedIndexChanged += delegate { Render(); };
             offline.CheckedChanged += delegate { informed.Checked = false; Render(); };
+            aiMode.SelectedIndexChanged += delegate { offline.Checked = aiMode.SelectedIndex == 2; informed.Checked = false; UpdateConsentText(); Render(); };
+            localSetup.Click += delegate { ShowLocalSetup(); };
+            licenseButton.Click += delegate { EnterLicense(); };
+            machineButton.Click += delegate
+            {
+                try { Clipboard.SetText(Licensing.MachineId()); MessageBox.Show(this, "Geräte-ID kopiert: " + Licensing.MachineId(), "Lizenz"); } catch (Exception) { }
+            };
             informed.CheckedChanged += delegate { Render(); };
             tick.Tick += async delegate
             {
@@ -239,15 +254,49 @@ namespace DebateAI
 
         private bool settingsExisted;
 
+        private void UpdateConsentText()
+        {
+            informed.Text = LocalMode ? "Alle Sprecher wissen, dass NOVA eine KI ist (Verarbeitung lokal auf diesem PC), und sind einverstanden."
+                : "Alle Sprecher wissen, dass NOVA eine KI ist und ihre Beiträge an OpenAI gehen, und sind einverstanden.";
+        }
+
+        private void EnterLicense()
+        {
+            using (var dialog = new Form { Text = "DEBATE AI · Lizenz", StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(620, 220),
+                FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false, Font = Font, BackColor = Theme.Panel, ForeColor = Theme.Text })
+            {
+                var area = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), FlowDirection = FlowDirection.TopDown, WrapContents = false };
+                var text = new TextBox { Width = 590, Height = 90, Multiline = true, AccessibleName = "Lizenzschlüssel" };
+                Button save = Button("Prüfen und speichern"), cancel = Button("Abbrechen");
+                area.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(590, 0),
+                    Text = "Lizenzschlüssel einfügen. Er wird mit der Signatur des Eigentümers geprüft. Geräte-ID dieses PCs: " + Licensing.MachineId() });
+                area.Controls.Add(text);
+                area.Controls.Add(Row(save, cancel));
+                dialog.Controls.Add(area);
+                save.Click += delegate
+                {
+                    LicenseInfo result = Licensing.Import(text.Text);
+                    if (result.Valid) { license = result; LocalData.WriteLog("Lizenz übernommen: " + result.Tier); dialog.Close(); }
+                    else MessageBox.Show(dialog, result.Describe(), "Lizenz");
+                };
+                cancel.Click += delegate { dialog.Close(); };
+                dialog.ShowDialog(this);
+            }
+            Render();
+        }
+
         private static string Lamp(bool on, string text) { return (on ? "● " : "○ ") + text; }
 
         private async System.Threading.Tasks.Task StartDebate()
         {
             if (!session.ReadyForStart || input.SelectedItem == null || output.SelectedItem == null) return;
-            if (!offline.Checked && (!informed.Checked || !LocalData.HasKey)) return;
+            if (!offline.Checked && !informed.Checked) return;
+            if (CloudMode && !LocalData.HasKey) return;
             wiped = false;
             SaveSettings();
-            AddLine("System", offline.Checked ? "Offline-Probe gestartet (nur Piepton)." : "Debatte gestartet. " + new Persona { Name = personaName.Text }.Disclosure());
+            AddLine("System", offline.Checked ? "Offline-Probe gestartet (nur Piepton)." :
+                (LocalMode ? "Lokale Debatte gestartet (kostenlos, ohne OpenAI). " : "OpenAI-Debatte gestartet (kostenpflichtig). ") + new Persona { Name = personaName.Text }.Disclosure());
+            LocalData.WriteLog("KI-Modus: " + (offline.Checked ? "Offline-Probe" : LocalMode ? "lokal · " + localModels.Llm + " · Whisper " + localModels.Whisper + " · " + localModels.Voice : "OpenAI Realtime"));
             await session.Start(OpenInput, OpenOutput, CreateDebater, Options());
         }
 
@@ -311,7 +360,10 @@ namespace DebateAI
             personaName.Text = "Nova";
             fairness.Checked = true;
             transcribe.Checked = true;
-            offline.Checked = !LocalData.HasKey;
+            aiMode.Items.AddRange(new object[] { "OpenAI Realtime · kostenpflichtig (Premium)", "Lokal auf diesem PC · kostenlos", "Offline-Probe · nur Piepton" });
+            aiMode.SelectedIndex = LocalData.HasKey ? 0 : 1;
+            offline.Checked = false;
+            offline.Visible = false;
             input.AccessibleName = "Eingang des Gesprächspartners";
             output.AccessibleName = "Ausgang der NOVA-Stimme";
             mode.AccessibleName = "Sprecherwechsel";
@@ -339,13 +391,14 @@ namespace DebateAI
                      Pair("Stimme", voice), Pair("Sprache", language), Pair("Thema", topic), Pair("NOVAs Position", position)),
                 transcribe));
             left.Controls.Add(Section("3 · GESPRÄCHSSTEUERUNG",
+                Grid(Pair("KI-Modus", aiMode)), Row(localSetup),
                 Grid(Pair("Sprecherwechsel", mode), Pair("Geduld beim Satzende", patience), Pair("Wenn der Gast unterbricht", barge)),
                 fairness, echoGuard, memory,
                 Row(Caption("Unterbrechung ab ms"), bargeMs, Caption("Nachfrage nach s"), proactive),
                 Row(Caption("Kostenlimit $ pro Debatte (0 = aus)"), costLimit),
                 Row(Caption("Schwelle dBFS"), threshold, Caption("Sprechpause ms"), pauseMs),
                 Row(Caption("Nachlauf ms"), guard, Caption("Max. Redezeit s"), turnSeconds),
-                Row(offline), Row(key, log, wipe), Row(report), informed));
+                Row(offline), Row(key, log, wipe), Row(report), informed, licenseLabel, Row(licenseButton, machineButton)));
 
             var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = Theme.Background };
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -358,7 +411,7 @@ namespace DebateAI
             status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
             status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             var texts = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Fill };
-            texts.Controls.Add(state); texts.Controls.Add(note); texts.Controls.Add(warning); texts.Controls.Add(api); texts.Controls.Add(live); texts.Controls.Add(lamps);
+            texts.Controls.Add(modeLabel); texts.Controls.Add(state); texts.Controls.Add(note); texts.Controls.Add(warning); texts.Controls.Add(api); texts.Controls.Add(live); texts.Controls.Add(lamps);
             // Status texts wrap to the space that is actually left next to the orb.
             status.SizeChanged += delegate
             {
@@ -523,6 +576,8 @@ namespace DebateAI
         private IDebater CreateDebater()
         {
             if (offline.Checked) return new OfflineDebater();
+            // The local mode never creates an OpenAI connection; it can only reach services on this PC.
+            if (LocalMode) return localEngine.Create(localModels, CurrentPersona(), session.MemoryForReconnect);
             return new RealtimeDebater(new WebSocketWire(LocalData.LoadKey()), new LiveOptions
             {
                 Persona = CurrentPersona(), Transcribe = transcribe.Checked, ServerTurns = mode.SelectedIndex == 0,
@@ -540,10 +595,15 @@ namespace DebateAI
             bool measuring = session.State == Phase.Meter;
             foreach (Control control in new Control[] { input, output, mode, threshold, guard, pauseMs, refresh, setup, offline, key, fairness,
                 turnSeconds, style, intensity, length, voice, language, personaName, topic, position, transcribe, wipe, patience, barge, echoGuard,
-                memory, bargeMs, proactive, wizard, profileBox, saveProfile, deleteProfile, costLimit, tiktok })
+                memory, bargeMs, proactive, wizard, profileBox, saveProfile, deleteProfile, costLimit, tiktok, aiMode, localSetup })
                 control.Enabled = ready;
             informed.Enabled = ready && !offline.Checked;
-            start.Enabled = ready && hasInput && hasOutput && (offline.Checked || informed.Checked && LocalData.HasKey);
+            start.Enabled = ready && hasInput && hasOutput && (offline.Checked || informed.Checked && (LocalMode || LocalData.HasKey));
+            aiMode.Enabled = localSetup.Enabled = licenseButton.Enabled = ready;
+            if (offline.Checked) { modeLabel.Text = "MODUS: OFFLINE-PROBE · nur Piepton · keine Kosten"; modeLabel.ForeColor = Theme.Amber; }
+            else if (LocalMode) { modeLabel.Text = "MODUS: LOKAL · kostenlos · keine API-Aufrufe · " + localModels.Llm; modeLabel.ForeColor = Theme.Green; }
+            else { modeLabel.Text = "MODUS: OPENAI REALTIME · kostenpflichtig · bisher " + session.Metrics.CostText(); modeLabel.ForeColor = Theme.Magenta; }
+            licenseLabel.Text = "Lizenz: " + license.Describe() + " · Geräte-ID " + Licensing.MachineId();
             start.Text = session.State == Phase.Paused || session.State == Phase.Moderated ? "Fortsetzen" : "Debatte starten";
             monitor.Enabled = ready && hasInput;
             echoCheck.Enabled = ready && hasInput && hasOutput;
@@ -568,7 +628,7 @@ namespace DebateAI
                 case Phase.Meter: state.Text = "Routing prüfen"; break;
                 case Phase.Tone: state.Text = "Testton"; break;
                 case Phase.EchoTest: state.Text = "Echoprüfung · bitte still sein"; break;
-                case Phase.Connecting: state.Text = offline.Checked ? "Audiogeräte öffnen" : "Verbindung zu OpenAI wird aufgebaut"; break;
+                case Phase.Connecting: state.Text = offline.Checked ? "Audiogeräte öffnen" : LocalMode ? "Lokale KI wird gestartet" : "Verbindung zu OpenAI wird aufgebaut"; break;
                 case Phase.Listening: state.Text = session.Muted ? "NOVA hört nur zu (stumm)" : "NOVA hört zu"; break;
                 case Phase.Recording: state.Text = "Gesprächspartner spricht"; break;
                 case Phase.Thinking: state.Text = offline.Checked ? "Antwortton vorbereiten" : "NOVA denkt nach"; break;
@@ -587,9 +647,9 @@ namespace DebateAI
             if (loggingFailed) message += " Das lokale Protokoll ist derzeit nicht beschreibbar.";
             note.Text = message;
             warning.Text = offline.Checked
-                ? "Offline-Probe aktiv: NOVA antwortet nur mit einem Piepton. Für echte Antworten den Haken entfernen und den API-Schlüssel hinterlegen."
-                : !LocalData.HasKey ? "Kein API-Schlüssel hinterlegt." : !informed.Checked && ready ? "Bitte die Einwilligung der Sprecher bestätigen." : "";
-            api.Text = offline.Checked ? "API: offline" :
+                ? "Offline-Probe aktiv: NOVA antwortet nur mit einem Piepton. Für echte Antworten unter „KI-Modus“ Lokal oder OpenAI wählen."
+                : CloudMode && !LocalData.HasKey ? "Kein API-Schlüssel hinterlegt (für OpenAI nötig; der lokale Modus braucht keinen)." : !informed.Checked && ready ? "Bitte die Einwilligung der Sprecher bestätigen." : "";
+            api.Text = offline.Checked ? "API: offline" : LocalMode ? "KI: lokal · " + localModels.Llm + " · Whisper " + localModels.Whisper + " · Piper " + localModels.Voice :
                 session.State == Phase.Idle || ready ? "API: " + (LocalData.HasKey ? "Schlüssel hinterlegt · " + RealtimeDebater.Model : "kein Schlüssel") :
                 session.State == Phase.Connecting ? "API: verbindet …" : "API: Verbindung aktiv · " + RealtimeDebater.Model + " · Antworten: " + session.Answers;
             string echoState = session.EchoCheckPassed == true ? "Echoprüfung bestanden" : session.EchoCheckPassed == false ? "Echo erkannt" : "Echoprüfung offen";
@@ -627,7 +687,7 @@ namespace DebateAI
             bool inputActive = running && nowUi - lastInputActivity < 2000;
             bool echoWarn = session.Metrics.EchoLoops > 0 || session.EchoCheckPassed == false;
             string lampText = Lamp(inputActive, "Eingang") + "   " + Lamp(running && session.State == Phase.Speaking, "NOVA-Ausgang") + "   " +
-                Lamp(running && session.State != Phase.Connecting, "OpenAI") + "   " + Lamp(running && session.State == Phase.Recording, "Gast spricht") + "   " +
+                Lamp(running && session.State != Phase.Connecting, LocalMode ? "Lokale KI" : offline.Checked ? "Offline" : "OpenAI") + "   " + Lamp(running && session.State == Phase.Recording, "Gast spricht") + "   " +
                 (echoWarn ? "▲ Echo-Warnung" : "○ kein Echo") + "   Kosten " + session.Metrics.CostText() + (session.CostLimitReached ? " · LIMIT" : "");
             if (lamps.Text != lampText) lamps.Text = lampText;
             orb.Animate();
@@ -659,7 +719,7 @@ namespace DebateAI
                 dialog.ShowDialog(this);
                 secret.Clear();
             }
-            if (LocalData.HasKey && offline.Checked) offline.Checked = false;
+
             Render();
         }
 
@@ -684,7 +744,7 @@ namespace DebateAI
         {
             if (MessageBox.Show(this, "API-Schlüssel, Einstellungen und Protokolle dieser App auf diesem PC löschen?",
                 "DEBATE AI · Lokale Daten", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-            try { LocalData.DeleteAll(); transcript.Clear(); wiped = true; offline.Checked = true; }
+            try { LocalData.DeleteAll(); transcript.Clear(); wiped = true; aiMode.SelectedIndex = 1; license = Licensing.Load(); }
             catch (Exception) { MessageBox.Show(this, "Nicht alle Dateien konnten gelöscht werden.", "DEBATE AI"); }
             Render();
         }
@@ -700,7 +760,8 @@ namespace DebateAI
             values["name"] = personaName.Text; values["topic"] = topic.Text; values["position"] = position.Text;
             values["fairness"] = fairness.Checked; values["transcribe"] = transcribe.Checked;
             values["patience"] = patience.SelectedIndex; values["barge"] = barge.SelectedIndex; values["echoGuard"] = echoGuard.Checked;
-            values["memory"] = memory.Checked; values["costLimit"] = (int)costLimit.Value; values["bargeMs"] = (int)bargeMs.Value; values["proactive"] = (int)proactive.Value;
+            values["memory"] = memory.Checked; values["costLimit"] = (int)costLimit.Value;
+            values["aiMode"] = aiMode.SelectedIndex; values["localLlm"] = localModels.Llm; values["localWhisper"] = localModels.Whisper; values["localVoice"] = localModels.Voice; values["bargeMs"] = (int)bargeMs.Value; values["proactive"] = (int)proactive.Value;
             values["threshold"] = (int)threshold.Value; values["pause"] = (int)pauseMs.Value; values["guard"] = (int)guard.Value; values["turn"] = (int)turnSeconds.Value;
             var inDevice = input.SelectedItem as Device; var outDevice = output.SelectedItem as Device;
             values["input"] = inDevice == null ? "" : inDevice.Name; values["output"] = outDevice == null ? "" : outDevice.Name;
@@ -724,6 +785,12 @@ namespace DebateAI
             Select(patience, values, "patience"); Select(barge, values, "barge");
             echoGuard.Checked = LocalData.Flag(values, "echoGuard", true); memory.Checked = LocalData.Flag(values, "memory", true);
             Set(bargeMs, values, "bargeMs"); Set(proactive, values, "proactive"); Set(costLimit, values, "costLimit");
+            Select(aiMode, values, "aiMode");
+            localModels.Llm = LocalData.Text(values, "localLlm", localModels.Llm);
+            localModels.Whisper = LocalData.Text(values, "localWhisper", localModels.Whisper);
+            localModels.Voice = LocalData.Text(values, "localVoice", localModels.Voice);
+            localModels.Threads = Math.Max(2, Math.Min(8, Environment.ProcessorCount - 1));
+            UpdateConsentText();
             Set(threshold, values, "threshold"); Set(pauseMs, values, "pause"); Set(guard, values, "guard"); Set(turnSeconds, values, "turn");
             savedInput = LocalData.Text(values, "input", ""); savedOutput = LocalData.Text(values, "output", "");
         }
@@ -756,7 +823,7 @@ namespace DebateAI
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { tick.Dispose(); session.Dispose(); }
+            if (disposing) { tick.Dispose(); session.Dispose(); localEngine.Dispose(); }
             base.Dispose(disposing);
         }
 

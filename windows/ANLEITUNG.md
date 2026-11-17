@@ -1,16 +1,20 @@
 # DEBATE AI für Windows
 
-**Version 0.5.0 · NOVA, KI-Debattenpartnerin mit synthetischer Stimme**
+**Version 0.6.0 · NOVA, KI-Debattenpartnerin mit synthetischer Stimme**
 
 > Neu in 0.3.0: Live-Debatten im Vollduplex. NOVA hört auch zu, während sie spricht, erkennt das echte Satzende, lässt sich unterbrechen und merkt sich den Debattenverlauf. TikTok-Einrichtung: `docs/LIVE-SETUP.md`. Prüfstand: `docs/STATUS.md`.
 
 ## 0. Installation
 
-- **Installer:** `DEBATE-AI-Setup-0.5.0.exe` ausführen. Es sind keine Administratorrechte nötig; die App landet unter `%LOCALAPPDATA%\Programs\DEBATE AI` und im Startmenü.
+- **Installer:** `DEBATE-AI-Setup-0.6.0.exe` ausführen. Es sind keine Administratorrechte nötig; die App landet unter `%LOCALAPPDATA%\Programs\DEBATE AI` und im Startmenü.
 - **Ohne Installer:** `DEBATE-AI-portable.zip` entpacken und `DEBATE-AI.exe` starten (`DEBATE-AI.exe.config` muss daneben liegen).
 - **Selbst bauen:** `Neu-bauen.cmd` ausführen (nutzt den in Windows enthaltenen C#-Compiler von .NET Framework 4.8), danach `Selbsttest.cmd`.
 - **Systemanforderungen:** Windows 10 (ab 1903) oder Windows 11, .NET Framework 4.8 (bereits enthalten), Internetverbindung, ein OpenAI-API-Projekt mit Realtime-Zugriff und Guthaben.
 - **SmartScreen:** Solange der Installer nicht code-signiert ist, zeigt Windows „Der Computer wurde durch Windows geschützt“. Über „Weitere Informationen → Trotzdem ausführen“ geht es weiter. Für den Verkauf wird ein Code-Signing-Zertifikat benötigt (siehe `docs/STATUS.md`).
+
+## 0c. KI-Modus: OpenAI oder lokal (ab 0.6.0)
+
+Unter „3 · Gesprächssteuerung“ → **KI-Modus**: *OpenAI Realtime* (kostenpflichtig, beste Qualität), *Lokal auf diesem PC* (kostenlos, ohne API) oder *Offline-Probe*. Oben im Statusbereich steht immer der aktive Modus und welche Kosten entstehen können. Einrichtung des lokalen Modus: `docs/LOKALE-KI.md`. Eigentümer-Lizenz: `docs/LIZENZ.md`.
 
 ## 0b. TikTok LIVE (ab 0.5.0)
 

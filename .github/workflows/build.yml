@@ -38,6 +38,19 @@ jobs:
       - name: Selbsttest (Logik, Realtime-Simulation, DPAPI, WinMM, Fenster)
         run: call Selbsttest.cmd
 
+      - name: Lizenzwerkzeug bauen und prüfen (nur öffentlicher Teil, kein Schlüssel)
+        shell: pwsh
+        run: |
+          cmd /c Lizenzwerkzeug-bauen.cmd
+          if ($LASTEXITCODE -ne 0) { throw "Lizenzwerkzeug lässt sich nicht bauen" }
+          $key = Join-Path $env:RUNNER_TEMP 'ci-only-key.xml'
+          ./LicenseTool.exe keygen $key | Out-Null
+          $token = ./LicenseTool.exe owner $key "CI-Test" "ABCDEF0123456789ABCD"
+          if (-not $token -or $token -notmatch '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$') { throw "Lizenz-Signatur fehlgeschlagen" }
+          Remove-Item $key
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path LicenseTool.exe -DestinationPath "dist/DEBATE-AI-$env:APP_VERSION-LicenseTool.zip" -Force
+
       - name: Inno Setup bereitstellen
         shell: pwsh
         run: |
@@ -91,6 +104,7 @@ jobs:
           path: |
             windows/dist/DEBATE-AI-Setup-*.exe
             windows/dist/DEBATE-AI-*-portable.zip
+            windows/dist/DEBATE-AI-*-LicenseTool.zip
           if-no-files-found: error
 
   release:
@@ -124,6 +138,38 @@ jobs:
           ls -la dist
           gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "DEBATE AI $VERSION" --prerelease \
             --notes "Windows-Installer (DEBATE-AI-Setup-$VERSION.exe) und portable Version, automatisch gebaut und getestet (Selbsttest, stille Installation, Start, Deinstallation). Nicht code-signiert: Windows SmartScreen zeigt eine Warnung (Weitere Informationen → Trotzdem ausführen). Live-Test-Anleitung: docs/HARDWARE-TEST.md, TikTok-Einrichtung: docs/LIVE-SETUP.md. Die Live-Funktion ist auf echter Hardware noch ungetestet."
+
+  sources:
+    name: Download-Quellen der lokalen KI prüfen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Offizielle Releases und Modelle erreichbar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          assets=$(gh api repos/ggml-org/whisper.cpp/releases/latest --jq '.tag_name + " " + ([.assets[].name]|join(" "))')
+          echo "whisper.cpp: $assets"
+          echo "$assets" | grep -q "whisper-bin-x64.zip" || { echo "::error::whisper-bin-x64.zip fehlt im aktuellen whisper.cpp-Release"; exit 1; }
+          piper=$(gh api repos/rhasspy/piper/releases/tags/2023.11.14-2 --jq '[.assets[].name]|join(" ")')
+          echo "Piper: $piper"
+          echo "$piper" | grep -q "piper_windows_amd64.zip" || { echo "::error::piper_windows_amd64.zip fehlt"; exit 1; }
+          for url in \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
+            https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx \
+            https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json \
+            https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx \
+            https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/kerstin/low/de_DE-kerstin-low.onnx \
+            https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/kerstin/low/de_DE-kerstin-low.onnx.json \
+            https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/ramona/low/de_DE-ramona-low.onnx \
+            https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/ramona/low/de_DE-ramona-low.onnx.json \
+            https://ollama.com/download/windows; do
+            code=$(curl -s -o /dev/null -I -L -w '%{http_code}' "$url")
+            echo "$code $url"
+            [ "$code" = "200" ] || { echo "::error::nicht erreichbar: $url"; exit 1; }
+          done
 
   website:
     name: Website (Typecheck und Build)

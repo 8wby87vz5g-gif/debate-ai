@@ -6,7 +6,7 @@ Windows-App für Live-Debatten mit der KI-Debattenpartnerin **NOVA** (TikTok LIV
 |---|---|
 | `windows/` | Windows-Client (C#, .NET Framework 4.8, WinForms, WinMM, OpenAI Realtime). Anleitung: [`windows/ANLEITUNG.md`](windows/ANLEITUNG.md) |
 | `website/` | Produktwebsite (Next.js, TypeScript, Tailwind) |
-| `docs/` | [Projektstatus](docs/STATUS.md) · [TikTok-Live-Einrichtung](docs/LIVE-SETUP.md) · [Live-Abnahme](docs/HARDWARE-TEST.md) · [Testbericht](docs/TESTBERICHT.md) |
+| `docs/` | [Projektstatus](docs/STATUS.md) · [TikTok-Live-Einrichtung](docs/LIVE-SETUP.md) · [Lokale KI](docs/LOKALE-KI.md) · [Lizenz](docs/LIZENZ.md) · [Live-Abnahme](docs/HARDWARE-TEST.md) · [Testbericht](docs/TESTBERICHT.md) |
 | `.github/workflows/` | Automatischer Windows-Build, Selbsttest, Installer und Website-Build |
 
 ## Schnellstart Windows

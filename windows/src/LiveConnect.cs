@@ -29,9 +29,10 @@ namespace DebateAI
         private void ShowLiveConnect()
         {
             if (!session.ReadyForStart) { MessageBox.Show(this, "Bitte zuerst die laufende Debatte beenden.", "TikTok LIVE"); return; }
-            if (offline.Checked || !LocalData.HasKey)
+            if (offline.Checked || (CloudMode && !LocalData.HasKey))
             {
-                MessageBox.Show(this, "Für TikTok LIVE wird der OpenAI-API-Schlüssel benötigt. Bitte zuerst „API-Schlüssel hinterlegen“ und die Offline-Probe ausschalten.", "TikTok LIVE");
+                MessageBox.Show(this, offline.Checked ? "Die Offline-Probe antwortet nur mit Piepton. Bitte unter „KI-Modus“ Lokal oder OpenAI wählen." :
+                    "Für den OpenAI-Modus wird der API-Schlüssel benötigt. Alternativ unter „KI-Modus“ den kostenlosen lokalen Modus wählen.", "TikTok LIVE");
                 return;
             }
             RefreshDevices();
@@ -96,7 +97,7 @@ namespace DebateAI
 
                 // 5 · OpenAI
                 Button openAi = Button("Verbindung prüfen");
-                CheckRow openAiRow = row("5 · OpenAI Realtime", new Control[] { openAi });
+                CheckRow openAiRow = row(LocalMode ? "5 · Lokale KI (Ollama, Whisper, Piper)" : "5 · OpenAI Realtime", new Control[] { openAi });
 
                 // 6 · LIVE Studio
                 var liveMic = new CheckBox { Text = "In LIVE Studio ist „Voicemeeter Out B1“ als Mikrofon gewählt (genau einmal).", AutoSize = true, ForeColor = Theme.Text };
@@ -221,6 +222,20 @@ namespace DebateAI
                     openAi.Enabled = false;
                     openAiRow.Show(null, "Verbinde …");
                     var started = Stopwatch.StartNew();
+                    if (LocalMode)
+                    {
+                        try
+                        {
+                            LocalModels models = localModels;
+                            Persona persona = CurrentPersona();
+                            await Task.Run(() => { using (localEngine.Create(models, persona, "")) { } });
+                            openAiRow.Show(true, "Lokale KI bereit: " + models.Llm + " · Whisper " + models.Whisper + " · " + models.Voice + " (" + started.ElapsedMilliseconds +
+                                " ms). Keine API-Kosten. " + (lastBenchmark.Length == 0 ? "Tipp: unter „Lokale KI einrichten“ die Geschwindigkeit messen." : ""));
+                        }
+                        catch (Exception error) { openAiRow.Show(false, error is AppError ? error.Message : "Lokale KI nicht bereit: " + error.GetType().Name); }
+                        finally { openAi.Enabled = true; update(); }
+                        return;
+                    }
                     try
                     {
                         using (var probe = new RealtimeDebater(new WebSocketWire(LocalData.LoadKey()), new LiveOptions { Persona = CurrentPersona(), Transcribe = true, ServerTurns = true, Patience = patience.SelectedIndex }))

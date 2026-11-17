@@ -1,6 +1,6 @@
 # DEBATE AI · Projektstatus
 
-Stand: 17.11.2026 · Windows-Client 0.5.0
+Stand: 17.11.2026 · Windows-Client 0.6.0
 
 Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter Hardware / mit echter OpenAI-Verbindung / mit TikTok** · 🟡 teilweise · ❌ fehlt
 
@@ -28,6 +28,8 @@ Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter H
 | Klar als KI erkennbar | Gesprochener Hinweis beim Start, Dauerhinweis in der App, Anleitung für Stream-Einblendung | ✅ | ⚪ |
 | TikTok-LIVE-Pipeline | „TikTok LIVE verbinden“: Voicemeeter-Fernsteuerung, Routing-Messung, Gastton-Test, OpenAI-Test, Startfreigabe | ✅ mit simuliertem Mischpult | ⚪ |
 | Lokale Debatte mit echter OpenAI-API | – | – | ✅ **von dir bestätigt**, ca. 1–2 s |
+| Lokaler KI-Modus (whisper.cpp, Ollama, Piper), kostenlos | Satzweise Ausgabe, Verlauf, Gedächtnis, Unterbrechen, Sicherheitssperre nur 127.0.0.1 | ✅ mit simulierten Modellen | ⚪ **auf deinem PC ungetestet, Geschwindigkeit ungemessen** |
+| Eigentümer-Lizenz | Signiert, PC-gebunden; öffentlicher Schlüssel muss noch eingebaut werden | ✅ | ⚪ |
 | Kosten und Kostenlimit | Schätzung aus Token-Angaben von OpenAI, Limit schaltet NOVA stumm | ✅ | ⚪ Preise ohne Mitschrift |
 
 ### Bekannte Grenzen

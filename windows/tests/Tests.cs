@@ -51,6 +51,13 @@ namespace DebateAI
                 Run("Routing-Messung erkennt richtige und falsche Wege", TestRoutingMeasurement);
                 Run("Gastton-Test und LIVE-Studio-Erkennung", TestGuestProbe);
                 Run("Kostenschätzung, Kostenlimit und Gast ausreden lassen", TestCostLimit);
+                Run("Lokal: Resampling, WAV, Satzaufteilung, Whisper-Bereinigung", TestLocalBasics);
+                Run("Lokal: Sicherheitssperre erlaubt nur Dienste auf diesem PC", TestLocalGuard);
+                Run("Lokal: NOVA-Pipeline Spracherkennung → Sprachmodell → Stimme", TestLocalPipeline);
+                Run("Lokal: Unterbrechen, Verwerfen und Gedächtnis ohne Verlust", TestLocalCancel);
+                Run("Lokal: komplette Debatte über die Gesprächssteuerung", TestLocalSession);
+                Run("Lokal: Hardware-Empfehlung, Downloadauswahl, Ollama-Anfrage, Messung", TestLocalSetup);
+                Run("Eigentümer-Lizenz: Signatur, Gerätebindung, Manipulation, Ablauf", TestLicense);
                 Run("Realtime: Sitzungsaufbau, semantische VAD, KI-Hinweis", TestRealtimeStart);
                 Run("Realtime: Live-Ereignisse, Antwort-Audio, Gedächtnis, Kürzen", TestRealtimeLive);
                 Run("Realtime: API-Fehler, Warnungen und Verbindungsende", TestRealtimeErrors);
@@ -780,6 +787,234 @@ namespace DebateAI
                 rig.Session.Fairness = false;
                 Check(!rig.Session.Fairness, "Gast ausreden lassen lässt sich nicht umschalten");
             }
+        }
+
+        private sealed class FakeStt : ISpeechToText
+        {
+            public readonly Queue<string> Texts = new Queue<string>();
+            public TaskCompletionSource<bool> Gate;
+            public int Calls;
+            public async Task<string> Transcribe(byte[] pcm, CancellationToken token)
+            {
+                Calls++;
+                if (Gate != null) await Gate.Task;
+                token.ThrowIfCancellationRequested();
+                return Texts.Count == 0 ? "" : Texts.Dequeue();
+            }
+        }
+
+        private sealed class FakeLlm : IChatModel
+        {
+            public readonly Queue<string> Answers = new Queue<string>();
+            public readonly List<List<ChatMessage>> Requests = new List<List<ChatMessage>>();
+            public Task Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token)
+            {
+                lock (Requests) Requests.Add(new List<ChatMessage>(messages));
+                string answer = Answers.Count == 0 ? "Gut." : Answers.Dequeue();
+                foreach (string word in answer.Split(' ')) { token.ThrowIfCancellationRequested(); onDelta(word + " "); }
+                return Task.FromResult(0);
+            }
+        }
+
+        private sealed class FakeTts : ITextToSpeech
+        {
+            public readonly List<string> Spoken = new List<string>();
+            public Task<byte[]> Speak(string text, CancellationToken token)
+            {
+                lock (Spoken) Spoken.Add(text);
+                return Task.FromResult(Long(500));
+            }
+        }
+
+        private static List<LiveEvent> Drain(IDebater ai, LiveKind until)
+        {
+            var found = new List<LiveEvent>();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            while (clock.ElapsedMilliseconds < 3000)
+            {
+                LiveEvent item;
+                if (ai.TryTake(out item)) { found.Add(item); if (item.Kind == until) return found; }
+                else Thread.Sleep(5);
+            }
+            throw new Exception("Ereignis fehlt: " + until + " nach " + string.Join(",", found));
+        }
+
+        private static void TestLocalBasics()
+        {
+            byte[] tone = WinAudio.Tone(1000, 440);
+            byte[] down = Pcm.Resample(tone, 24000, 16000);
+            Check(down.Length == 32000 && Pcm.Resample(tone, 24000, 24000) == tone, "Resampling-Länge falsch");
+            int rate;
+            byte[] back = Pcm.ReadWav(Pcm.Wav(down, 16000), out rate);
+            Check(rate == 16000 && back.Length == down.Length && WinAudio.ReadSample(back, 200) == WinAudio.ReadSample(down, 200), "WAV-Rundlauf falsch");
+            byte[] up = Pcm.Resample(new byte[22050 * 2], 22050, 24000);
+            Check(up.Length == 48000, "Piper-Rate 22050 → 24000 falsch");
+            var splitter = new SentenceSplitter();
+            var got = new List<string>();
+            foreach (string piece in new[] { "Das sehe ", "ich anders. Ein Tempo", "limit rettet Leben! Und ", "was ist mit dir?" }) got.AddRange(splitter.Add(piece));
+            got.Add(splitter.Rest());
+            Check(got.Count == 3 && got[0] == "Das sehe ich anders." && got[1] == "Ein Tempolimit rettet Leben!" && got[2] == "Und was ist mit dir?", "Satzaufteilung falsch: " + string.Join("|", got));
+            var shortOnes = new SentenceSplitter();
+            Check(shortOnes.Add("Ja. Nein. ").Count == 0, "Zu kurze Satzstücke dürfen nicht einzeln gesprochen werden");
+            var longOne = new SentenceSplitter();
+            Check(longOne.Add(new string('a', 100) + ", " + new string('b', 100)).Count == 1, "Lange Sätze ohne Punkt werden nicht geteilt");
+            Check(WhisperServer.Clean(" [Musik] ") == "" && WhisperServer.Clean("(Applaus)") == "" && WhisperServer.Clean(" Hallo Welt.\n") == "Hallo Welt.", "Whisper-Bereinigung falsch");
+        }
+
+        private static void TestLocalGuard()
+        {
+            Check(LocalGuard.Loopback("http://127.0.0.1:11434/api/chat").IsLoopback && LocalGuard.Loopback("http://localhost:18178/").IsLoopback, "Lokale Adressen abgelehnt");
+            Expect<AppError>(() => LocalGuard.Loopback("https://api.openai.com/v1/realtime"), "Sicherheitssperre");
+            Expect<AppError>(() => LocalGuard.Loopback("http://192.168.1.20:11434/"), "Sicherheitssperre");
+            Check(new Uri(OllamaChat.Url).IsLoopback && new Uri(WhisperServer.Url).IsLoopback, "Lokale Dienste zeigen nicht auf diesen PC");
+        }
+
+        private static LocalDebater Local(FakeStt stt, FakeLlm llm, FakeTts tts)
+        {
+            return new LocalDebater(stt, llm, tts, new Persona { Name = "Nova" }, "");
+        }
+
+        private static void TestLocalPipeline()
+        {
+            var stt = new FakeStt(); var llm = new FakeLlm(); var tts = new FakeTts();
+            stt.Texts.Enqueue("Tempo 130 reicht völlig aus.");
+            llm.Answers.Enqueue("Das sehe ich anders. Weniger Tempo heißt weniger Unfälle. Was spricht für dich dagegen?");
+            using (LocalDebater ai = Local(stt, llm, tts))
+            {
+                Check(!ai.ServerTurns, "Lokal nutzt die lokale Turn-Erkennung");
+                byte[] intro = ai.Start(true, CancellationToken.None).GetAwaiter().GetResult();
+                Check(intro.Length > 0 && tts.Spoken[0].Contains("künstliche Intelligenz"), "Lokaler KI-Hinweis fehlt");
+                Drain(ai, LiveKind.Line);
+                ai.Append(Long(800)); ai.Append(Long(400)); ai.Commit();
+                var sink = new AudioSink();
+                ai.Respond(sink, null);
+                List<LiveEvent> events = Drain(ai, LiveKind.AnswerDone);
+                Check(events[0].Kind == LiveKind.Line && events[0].Speaker == "Gast" && events[0].Text == "Tempo 130 reicht völlig aus.", "Gast-Mitschrift fehlt");
+                Check(events.Exists(e => e.Kind == LiveKind.Line && e.Speaker == "Nova") && events[events.Count - 1].Completed, "NOVA-Antwort unvollständig");
+                Check(tts.Spoken.Count == 4 && tts.Spoken[1] == "Das sehe ich anders." && tts.Spoken[3] == "Was spricht für dich dagegen?", "Nicht satzweise gesprochen: " + string.Join("|", tts.Spoken));
+                Check(sink.TotalBytes == 3 * Long(500).Length, "Antwort-Audio fehlt");
+                Check(llm.Requests[0][0].Role == "system" && llm.Requests[0][0].Content.Contains("DEBATTENMETHODE") && llm.Requests[0][1].Content == "Tempo 130 reicht völlig aus.",
+                    "Sprachmodell bekommt Persona oder Beitrag nicht");
+                stt.Texts.Enqueue("Freiheit ist wichtiger.");
+                ai.Append(Long(600)); ai.Commit();
+                ai.Respond(new AudioSink(), "Bringe die Debatte voran.");
+                Drain(ai, LiveKind.AnswerDone);
+                List<ChatMessage> second = llm.Requests[1];
+                Check(second.Count == 4 && second[2].Role == "assistant" && second[2].Content.StartsWith("Das sehe ich anders.") && second[3].Content == "Freiheit ist wichtiger." &&
+                    second[0].Content.EndsWith("Bringe die Debatte voran."), "Gesprächsverlauf oder Zusatzanweisung fehlt");
+            }
+        }
+
+        private static void TestLocalCancel()
+        {
+            var stt = new FakeStt(); var llm = new FakeLlm(); var tts = new FakeTts();
+            llm.Answers.Enqueue("Erster Gedanke dazu ist klar. Zweiter Gedanke folgt jetzt hier.");
+            using (LocalDebater ai = Local(stt, llm, tts))
+            {
+                stt.Texts.Enqueue("Argument eins.");
+                ai.Append(Long(500)); ai.Commit(); ai.Respond(new AudioSink(), null);
+                Drain(ai, LiveKind.AnswerDone);
+                ai.Cancel(600);
+                List<ChatMessage> history = ai.History;
+                Check(history.Count == 2 && history[1].Content == "Erster Gedanke dazu ist klar. (unterbrochen)", "Kürzen auf Gehörtes falsch: " + history[history.Count - 1].Content);
+                llm.Answers.Enqueue("Nie gehört.");
+                stt.Texts.Enqueue("Argument zwei.");
+                ai.Append(Long(500)); ai.Commit(); ai.Respond(new AudioSink(), null);
+                Drain(ai, LiveKind.AnswerDone);
+                ai.Cancel(-1);
+                Check(ai.History.Count == 3 && ai.History[2].Content == "Argument zwei.", "Ungehörte Antwort wird nicht vergessen");
+                stt.Gate = new TaskCompletionSource<bool>();
+                stt.Texts.Enqueue("Argument drei.");
+                ai.Append(Long(500)); ai.Commit(); ai.Respond(new AudioSink(), null);
+                Thread.Sleep(50);
+                ai.Cancel(-1);
+                stt.Gate.SetResult(true);
+                List<LiveEvent> cancelled = Drain(ai, LiveKind.AnswerDone);
+                Check(!cancelled[cancelled.Count - 1].Completed, "Abbruch nicht gemeldet");
+                stt.Gate = null;
+                ai.Respond(new AudioSink(), null);
+                Drain(ai, LiveKind.AnswerDone);
+                Check(ai.History.Exists(m => m.Content == "Argument drei."), "Beitrag geht beim Abbruch während der Spracherkennung verloren");
+                ai.Summarize("Gast: Argument eins.");
+                Check(Drain(ai, LiveKind.Memory).Count >= 1, "Lokales Gedächtnis fehlt");
+            }
+        }
+
+        private static void TestLocalSession()
+        {
+            var stt = new FakeStt(); var llm = new FakeLlm(); var tts = new FakeTts();
+            stt.Texts.Enqueue("Schule sollte später beginnen.");
+            llm.Answers.Enqueue("Das klingt gut, aber wer betreut dann die Kinder am Morgen?");
+            long time = 0;
+            var input = new FakeCapture(); var output = new FakePlayback();
+            using (var session = new DebateSession(() => time))
+            using (LocalDebater ai = Local(stt, llm, tts))
+            {
+                Wait(session.Start(() => input, () => output, () => ai, new SessionOptions { ServerTurns = true, RoutingVerified = true }));
+                Check(session.State == Phase.Speaking, "Lokaler KI-Hinweis wird nicht gesprochen");
+                output.Done = true; Wait(session.Tick());
+                for (int i = 0; i < 10; i++) { input.Add(Voice(), 1); time += 40; Wait(session.Tick()); }
+                for (int i = 0; i < 30; i++) { input.Add(Silence(), 1); time += 40; Wait(session.Tick()); }
+                Check(session.State == Phase.Thinking || session.State == Phase.Speaking, "Lokal: Beitrag nach Sprechpause nicht beantwortet (" + session.State + ")");
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                while (session.State != Phase.Speaking && clock.ElapsedMilliseconds < 3000) { Thread.Sleep(10); time += 10; Wait(session.Tick()); }
+                Check(session.State == Phase.Speaking && session.Metrics.Latency.Count == 1, "Lokal: NOVA spricht nicht");
+                while (session.State == Phase.Speaking && clock.ElapsedMilliseconds < 5000) { Thread.Sleep(10); output.Done = true; Wait(session.Tick()); }
+                Check(session.Metrics.Cost == 0 && session.Answers == 1, "Lokal dürfen keine Kosten entstehen");
+            }
+        }
+
+        private static void TestLocalSetup()
+        {
+            string reason;
+            LocalModels laptop = ModelAdvisor.Recommend(new HardwareInfo { RamGb = 15.7, Cores = 8, Cpu = "Intel Core i5" }, out reason);
+            Check(laptop.Llm == "gemma3:4b" && laptop.Whisper == "base" && laptop.Threads == 7 && reason.Contains("Prozessor"), "Empfehlung Laptop falsch");
+            var gaming = new HardwareInfo { RamGb = 32, Cores = 16 };
+            gaming.NvidiaVramGb = HardwareInfo.VramFromName("NVIDIA GeForce RTX 4070");
+            Check(ModelAdvisor.Recommend(gaming, out reason).Llm == "qwen3:8b" && gaming.NvidiaVramGb == 12, "Empfehlung Grafikkarte falsch");
+            Check(ModelAdvisor.Recommend(new HardwareInfo { RamGb = 4, Cores = 4 }, out reason).Llm == "llama3.2:3b", "Empfehlung wenig RAM falsch");
+            Check(ModelAdvisor.Recommend(new HardwareInfo { RamGb = 0, Cores = 2 }, out reason).Llm == "gemma3:4b" && reason.Contains("nicht ermittelt"), "Unbekannte Hardware falsch behandelt");
+            var assets = new List<string> { "whisper-blas-bin-x64.zip", "whisper-cublas-12.4.0-bin-x64.zip", "whisper-bin-Win32.zip", "whisper-bin-x64.zip" };
+            Check(LocalSources.PickAsset(assets, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "blas", "cuda" }) == "whisper-bin-x64.zip", "Download-Auswahl falsch");
+            assets.RemoveAt(3);
+            Check(LocalSources.PickAsset(assets, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "blas", "cuda" }) == null, "Falsche Variante gewählt");
+            Check(LocalSources.PickAsset(new List<string> { "piper_linux_x86_64.tar.gz", "piper_windows_amd64.zip" }, "x", new[] { "windows", "amd64" }, new string[0]) == "piper_windows_amd64.zip",
+                "Piper-Auswahl falsch");
+            string json = new JavaScriptSerializer().Serialize(new OllamaChat("qwen3:8b").Request(new List<ChatMessage> { new ChatMessage("user", "Hi") }, 200, true));
+            Check(json.Contains("\"think\":false") && json.Contains("\"stream\":true") && json.Contains("\"num_predict\":200"), "Ollama-Anfrage falsch: " + json);
+            Check(!new JavaScriptSerializer().Serialize(new OllamaChat("gemma3:4b").Request(new List<ChatMessage>(), 10, false)).Contains("think"), "think nur für Denkmodelle");
+            Check(OllamaChat.HasModel(new List<string> { "gemma3:4b" }, "gemma3:4b") && OllamaChat.HasModel(new List<string> { "mistral:latest" }, "mistral") &&
+                !OllamaChat.HasModel(new List<string> { "gemma3:12b" }, "gemma3:4b"), "Modellerkennung falsch");
+            Check(LocalSources.Voice("de_DE-kerstin-low").Path == "kerstin/low/" && LocalSources.Voice("gibt-es-nicht").Id == "de_DE-thorsten-medium", "Stimmenauswahl falsch");
+            var stt = new FakeStt(); stt.Texts.Enqueue(LocalBenchmark.Sample);
+            var llm = new FakeLlm(); llm.Answers.Enqueue("Unfälle sinken kaum. Was sagst du zu Landstraßen?");
+            BenchmarkResult result = LocalBenchmark.Run(stt, llm, new FakeTts(), new Persona(), text => { }, CancellationToken.None).GetAwaiter().GetResult();
+            Check(result.Heard == LocalBenchmark.Sample && result.Answer.StartsWith("Unfälle") && result.TtsAudioMs == 500 &&
+                result.EstimatedResponseMs == 760 + result.SttMs + result.LlmFirstSentenceMs + result.FirstSentenceTtsMs && result.Describe().Contains("Reaktionszeit"), "Messung falsch");
+        }
+
+        private static void TestLicense()
+        {
+            string privateKey, publicKey;
+            using (var rsa = new RSACryptoServiceProvider(2048)) { rsa.PersistKeyInCsp = false; privateKey = rsa.ToXmlString(true); publicKey = rsa.ToXmlString(false); }
+            var payload = new Dictionary<string, object> { { "licensee", "Murat Lüdecke" }, { "tier", "Owner" }, { "machines", new[] { "ABC123" } } };
+            string token = Licensing.Sign(payload, privateKey);
+            LicenseInfo ok = Licensing.Verify(token, publicKey, "abc123", DateTime.UtcNow);
+            Check(ok.Valid && ok.Tier == LicenseTier.Owner && ok.Licensee == "Murat Lüdecke" && ok.Describe().Contains("Eigentümer") && Licensing.Allows(ok, "pro"), "Gültige Eigentümer-Lizenz abgelehnt: " + ok.Describe());
+            Check(!Licensing.Verify(token, publicKey, "OTHER-PC", DateTime.UtcNow).Valid, "Lizenz gilt auf fremdem PC");
+            string[] parts = token.Split('.');
+            string forged = Licensing.Base64Url(System.Text.Encoding.UTF8.GetBytes(System.Text.Encoding.UTF8.GetString(Licensing.Base64Url(parts[0])).Replace("ABC123", "OTHER-PC"))) + "." + parts[1];
+            Check(!Licensing.Verify(forged, publicKey, "OTHER-PC", DateTime.UtcNow).Valid, "Veränderte Lizenz wird akzeptiert");
+            string otherKey;
+            using (var rsa = new RSACryptoServiceProvider(2048)) { rsa.PersistKeyInCsp = false; otherKey = rsa.ToXmlString(true); }
+            Check(!Licensing.Verify(Licensing.Sign(payload, otherKey), publicKey, "ABC123", DateTime.UtcNow).Valid, "Fremd signierte Lizenz wird akzeptiert");
+            Check(!Licensing.Verify(Licensing.Sign(new Dictionary<string, object> { { "licensee", "X" }, { "tier", "Owner" } }, privateKey), publicKey, "ABC123", DateTime.UtcNow).Valid,
+                "Eigentümer-Lizenz ohne Gerätebindung akzeptiert");
+            var expiring = new Dictionary<string, object> { { "licensee", "Kunde" }, { "tier", "Pro" }, { "expires", "2026-12-31" } };
+            Check(Licensing.Verify(Licensing.Sign(expiring, privateKey), publicKey, "X", new DateTime(2026, 11, 17)).Valid &&
+                !Licensing.Verify(Licensing.Sign(expiring, privateKey), publicKey, "X", new DateTime(2027, 1, 2)).Valid, "Ablaufdatum falsch geprüft");
+            Check(!Licensing.Verify(token, "", "ABC123", DateTime.UtcNow).Valid && !Licensing.Verify("kaputt", publicKey, "ABC123", DateTime.UtcNow).Valid, "Fehlerfälle akzeptiert");
+            Check(Licensing.MachineId().Length == 20, "Geräte-ID falsch");
         }
 
         private static void TestRealtimeStart()

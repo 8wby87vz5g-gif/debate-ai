@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 0.6.0 · 17.11.2026 · Lokaler KI-Modus und Eigentümer-Lizenz
+
+- **KI-Modus wählbar:** OpenAI Realtime (kostenpflichtig, Premium) · Lokal auf diesem PC (kostenlos) · Offline-Probe. Deutliche Modusanzeige mit Kosten.
+- **Lokaler Modus:** whisper.cpp (Spracherkennung) + Ollama (Sprachmodell) + Piper (Stimme), satzweise Ausgabe, Gesprächsverlauf, Gedächtnis, Unterbrechen und Warteschlange wie im OpenAI-Modus. Sicherheitssperre: nur Dienste auf 127.0.0.1, nie OpenAI.
+- **„Lokale KI einrichten“:** Hardwareprüfung, Modellempfehlung, Downloads aus offiziellen Quellen nach Bestätigung, Geschwindigkeitsmessung auf dem PC.
+- **Eigentümer-Lizenz:** signierte, an PCs gebundene Lizenzen; Lizenzwerkzeug für den Eigentümer; Anzeige von Lizenz und Geräte-ID.
+- TikTok-Prüfdialog und Stimmprobe nutzen im lokalen Modus die lokale KI.
+- CI baut das Lizenzwerkzeug und prüft die Download-Quellen der lokalen KI.
+- Der bisherige OpenAI-Realtime-Modus ist unverändert enthalten.
+
 ## 0.5.0 · 17.11.2026 · TikTok-LIVE-Integration
 
 - **„TikTok LIVE verbinden“**: Prüfdialog für die gesamte Audiokette mit Startfreigabe erst nach bestandenen Prüfungen. Behauptet keine Verbindung zu TikTok.

@@ -8,7 +8,7 @@ if not exist "%DEBATE_CSC%" (
   popd
   exit /b 1
 )
-"%DEBATE_CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /warnaserror+ /codepage:65001 /out:DEBATE-AI.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Security.dll src\*.cs
+"%DEBATE_CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /warnaserror+ /codepage:65001 /out:DEBATE-AI.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Security.dll /r:System.Management.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll src\*.cs
 set "DEBATE_RESULT=%ERRORLEVEL%"
 popd
 exit /b %DEBATE_RESULT%

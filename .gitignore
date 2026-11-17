@@ -13,3 +13,7 @@ website/.env*
 .env
 .env.*
 !.env.example
+# Private Lizenzschlüssel (nie einchecken)
+*privat*.xml
+*private*.xml
+*-key.xml

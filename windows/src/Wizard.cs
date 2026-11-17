@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -84,7 +84,7 @@ namespace DebateAI
                 voiceButton.Click += async delegate
                 {
                     stopTests();
-                    if (!offline.Checked && LocalData.HasKey) await session.VoiceTest(OpenOutput, CreateVoiceDebater);
+                    if (!offline.Checked && (LocalMode || LocalData.HasKey)) await session.VoiceTest(OpenOutput, CreateVoiceDebater);
                     else session.TestTone(OpenOutput);
                 };
                 echoButton.Click += delegate
@@ -132,7 +132,7 @@ namespace DebateAI
                             break;
                         case 4:
                             heading.Text = "NOVAs Stimme testen";
-                            body.Controls.Add(Hint(600, Theme.Text, !offline.Checked && LocalData.HasKey ?
+                            body.Controls.Add(Hint(600, Theme.Text, LocalMode ? "NOVA spricht ihren KI-Hinweis einmal mit der lokalen Stimme (keine Kosten)." : !offline.Checked && LocalData.HasKey ?
                                 "NOVA spricht ihren KI-Hinweis einmal auf dem gewählten Ausgang (wenige Cent API-Kosten)." :
                                 "Ohne API-Schlüssel wird ein Testton gespielt. Hinterlege den Schlüssel im Hauptfenster, um NOVAs echte Stimme zu hören."));
                             body.Controls.Add(voiceButton); body.Controls.Add(heard);
@@ -244,6 +244,7 @@ namespace DebateAI
 
         private IDebater CreateVoiceDebater()
         {
+            if (LocalMode) return localEngine.Create(localModels, CurrentPersona(), "");
             return new RealtimeDebater(new WebSocketWire(LocalData.LoadKey()), new LiveOptions { Persona = CurrentPersona(), Transcribe = false, ServerTurns = false });
         }
 
