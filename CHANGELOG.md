@@ -1,5 +1,10 @@
 # Änderungsprotokoll
 
+## 0.6.2 · 17.11.2026
+
+- Behoben: Direkt nach einem Modell-Download meldete die App fälschlich „Ollama nicht erreichbar“ (Ollama antwortete langsamer als 3 s). Jetzt längere Wartezeit mit Wiederholung.
+- Zweite echte Messung mit Satzteil-Beschleunigung (schnellerer Testrechner): llama3.2:3b 2,6 s, gemma3:1b 2,5 s, qwen2.5:3b 3,5 s Reaktionszeit.
+
 ## 0.6.1 · 17.11.2026 · Lokaler Modus unter echtem Windows getestet und beschleunigt
 
 - **Erstmals echt getestet** (Windows-VM bei GitHub, 4 Threads, ohne Grafikkarte): Download, whisper.cpp, Ollama, Piper und drei Debattenrunden je Modell. Läuft jetzt bei jedem Build mit.

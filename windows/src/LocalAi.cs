@@ -465,11 +465,25 @@ namespace DebateAI
             return "Ollama ist nicht erreichbar. Ollama installieren bzw. starten (Symbol im Infobereich).";
         }
 
+        // Ollama can be slow to answer right after a download or while loading a model: retry before giving up.
         public static List<string> InstalledModels()
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try { return ReadInstalledModels(attempt == 0 ? 4000 : 12000); }
+                catch (WebException error)
+                {
+                    if (attempt >= 2 || error.Status == WebExceptionStatus.ConnectFailure) throw;
+                    Thread.Sleep(500);
+                }
+            }
+        }
+
+        private static List<string> ReadInstalledModels(int timeoutMs)
         {
             var names = new List<string>();
             var request = (HttpWebRequest)WebRequest.Create(LocalGuard.Loopback(Url + "/api/tags"));
-            request.Timeout = 3000;
+            request.Timeout = timeoutMs; request.ReadWriteTimeout = timeoutMs;
             using (var response = (HttpWebResponse)request.GetResponse())
             using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
             {

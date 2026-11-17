@@ -130,7 +130,7 @@ namespace DebateAI
 
     internal sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.1";
+        public const string Version = "0.6.2";
 
         private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();

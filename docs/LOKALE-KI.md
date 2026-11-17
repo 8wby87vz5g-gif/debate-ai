@@ -1,6 +1,6 @@
 # Lokaler KI-Modus (kostenlos, ohne OpenAI)
 
-Stand 0.6.1 · **Auf deinem PC noch nicht getestet.** Auf einem Windows-Testrechner bei GitHub echt getestet (siehe unten). Geschwindigkeit und Antwortqualität sind erst nach der Messung unter „Lokale KI einrichten“ bekannt. Der lokale Modus wird ausdrücklich **nicht** als gleich schnell oder gleich intelligent wie OpenAI Realtime beworben.
+Stand 0.6.2 · **Auf deinem PC noch nicht getestet.** Auf einem Windows-Testrechner bei GitHub echt getestet (siehe unten). Geschwindigkeit und Antwortqualität sind erst nach der Messung unter „Lokale KI einrichten“ bekannt. Der lokale Modus wird ausdrücklich **nicht** als gleich schnell oder gleich intelligent wie OpenAI Realtime beworben.
 
 ## Aufbau
 
@@ -37,6 +37,16 @@ AMD EPYC, **4 Threads**, 16 GB RAM, **ohne Grafikkarte**, Whisper base, Stimme T
 | llama3.2:3b | 5,2 s | 6,8 s | 29 | gute Rückfragen |
 | gemma3:1b | 5,3 s | 6,3 s | 45 | hält Längengrenze nicht ein, schwach |
 | gemma3:4b | 8,1 s | 8,4 s | 29 | bestes Deutsch |
+
+Zweiter Lauf mit 0.6.2 (NOVA spricht schon nach dem ersten Satzteil; anderer, schnellerer Testrechner, ebenfalls 4 Threads ohne Grafikkarte):
+
+| Modell | Median | langsamste | Ø Wörter |
+|---|---|---|---|
+| gemma3:1b | 2,5 s | 4,2 s | 41 |
+| llama3.2:3b | 2,6 s | 3,0 s | 38 |
+| qwen2.5:3b | 3,5 s | 3,8 s | 8 |
+
+Die Testrechner schwanken stark (gleiches Modell 5,2 s bzw. 2,6 s). Entscheidend ist deshalb die Messung auf deinem PC.
 
 Zum Vergleich OpenAI Realtime auf deinem PC: ca. 1–2 s. **Der lokale Modus ist deutlich langsamer und inhaltlich einfacher.** Whisper base verhört sich bei Fremdwörtern spürbar („Social Media“ → „Xerl-Midija“). Ein Laptop mit mehr Kernen oder eine NVIDIA-Grafikkarte kann schneller sein; das zeigt erst „Geschwindigkeit messen“ auf deinem PC.
 
