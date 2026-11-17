@@ -163,6 +163,13 @@ namespace DebateAI
         public const string TranscriptionModel = "gpt-4o-mini-transcribe";
         public const int MaximumAnswerSeconds = 60;
         public static string Disclosure { get { return new Persona().Disclosure(); } }
+        // Diagnostic trace of event types and OpenAI error texts, without audio, transcripts or keys.
+        public static Action<string> Trace = delegate { };
+        private static readonly HashSet<string> Quiet = new HashSet<string>
+        {
+            "input_audio_buffer.append", "response.output_audio.delta", "response.output_audio_transcript.delta",
+            "response.output_text.delta", "conversation.item.input_audio_transcription.delta", "rate_limits.updated"
+        };
 
         private const string MemoryTask =
             "Du führst das Debattenprotokoll für die KI-Debattenpartnerin. Aktualisiere das bisherige Protokoll mit den neuen Gesprächsabschnitten. " +
@@ -340,8 +347,16 @@ namespace DebateAI
             else Enqueue(new { type = "conversation.item.truncate", item_id = id, content_index = 0, audio_end_ms = ms });
         }
 
+        private static void TraceOut(object message)
+        {
+            var type = message.GetType().GetProperty("type");
+            string name = type == null ? "?" : type.GetValue(message, null) as string;
+            if (name != null && !Quiet.Contains(name)) Trace("OpenAI → " + name);
+        }
+
         private void Enqueue(object message)
         {
+            TraceOut(message);
             outbox.Enqueue(json.Serialize(message));
             outboxSignal.Release();
         }
@@ -507,6 +522,7 @@ namespace DebateAI
         private async Task SendNow(object message, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            TraceOut(message);
             string text = json.Serialize(message);
             await wireLock.WaitAsync(token).ConfigureAwait(false);
             try { await wire.Send(text, token).ConfigureAwait(false); }
@@ -525,6 +541,11 @@ namespace DebateAI
                 token.ThrowIfCancellationRequested();
                 var message = json.Deserialize<Dictionary<string, object>>(await wire.Receive(token).ConfigureAwait(false));
                 string type = Field(message, "type");
+                if (!Quiet.Contains(type))
+                {
+                    string extra = type == "response.done" ? " " + Field(Child(message, "response"), "status") : "";
+                    Trace("OpenAI ← " + type + extra);
+                }
                 if (type == "conversation.item.input_audio_transcription.completed")
                 {
                     string heard = Field(message, "transcript").Trim();
@@ -534,6 +555,8 @@ namespace DebateAI
                 if (type != "error") return message;
                 var error = Child(message, "error");
                 string code = Field(error, "code");
+                string detail = Field(error, "message");
+                Trace("OpenAI-Fehler: " + code + " · " + Field(error, "param") + " · " + (detail.Length > 300 ? detail.Substring(0, 300) : detail));
                 if (code == "invalid_api_key") throw HttpError(401);
                 if (code == "model_not_found") throw HttpError(403);
                 if (code == "credit_balance_exhausted")

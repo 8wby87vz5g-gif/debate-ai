@@ -130,7 +130,7 @@ namespace DebateAI
 
     internal sealed partial class MainForm : Form
     {
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.1";
 
         private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();
@@ -186,6 +186,7 @@ namespace DebateAI
             var clock = Stopwatch.StartNew();
             session = new DebateSession(() => clock.ElapsedMilliseconds);
             session.Log += message => { if (!LocalData.WriteLog(message)) loggingFailed = true; };
+            RealtimeDebater.Trace = message => LocalData.WriteLog(message);
             session.Changed += Render;
             session.Line += AddLine;
             Fill();

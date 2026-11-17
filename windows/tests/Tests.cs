@@ -737,8 +737,15 @@ namespace DebateAI
             using (var ai = new RealtimeDebater(wire, new LiveOptions()))
             {
                 Wait(ai.Start(false, CancellationToken.None));
-                wire.In.Add("{\"type\":\"error\",\"error\":{\"code\":\"some_unknown_problem\",\"message\":\"SECRET\"}}");
+                var trace = new ConcurrentQueue<string>();
+                RealtimeDebater.Trace = trace.Enqueue;
+                ai.Append(new byte[4800]); ai.Commit();
+                wire.In.Add("{\"type\":\"error\",\"error\":{\"code\":\"some_unknown_problem\",\"param\":\"session.truncation\",\"message\":\"Unknown parameter\"}}");
                 var warning = Collect(ai, 1);
+                RealtimeDebater.Trace = delegate { };
+                string traced = string.Join("|", trace.ToArray());
+                Check(traced.Contains("OpenAI → input_audio_buffer.commit") && !traced.Contains("append") &&
+                    traced.Contains("OpenAI-Fehler: some_unknown_problem · session.truncation · Unknown parameter"), "Diagnose-Protokoll unvollständig: " + traced);
                 Check(warning[0].Kind == LiveKind.Warning && warning[0].Text == "some_unknown_problem", "Unbekannter Fehler beendet die Debatte");
                 wire.In.Add("{\"type\":\"error\",\"error\":{\"code\":\"invalid_api_key\",\"message\":\"SECRET\"}}");
                 var fatal = Collect(ai, 1);

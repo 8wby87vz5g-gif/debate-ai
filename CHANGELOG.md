@@ -1,5 +1,10 @@
 # Änderungsprotokoll
 
+## 0.4.1 · 17.11.2026
+
+- Diagnose-Protokoll für den ersten Live-Test: `debate-ai.log` enthält jetzt die Art jedes OpenAI-Ereignisses (gesendet → / empfangen ←) und die Fehlermeldungen von OpenAI im Wortlaut. Keine Audiodaten, keine Gesprächsinhalte, keine Schlüssel.
+- Protokoll-Schreiben ist jetzt threadsicher.
+
 ## 0.4.0 · 17.11.2026
 
 ### Neu

@@ -60,7 +60,15 @@ namespace DebateAI
 
         public static void DeleteKey() { File.Delete(SecretFile); }
 
+        private static readonly object logLock = new object();
+
+        // Thread-safe: the network threads write diagnostic traces concurrently with the UI.
         public static bool WriteLog(string message)
+        {
+            lock (logLock) return WriteLogUnlocked(message);
+        }
+
+        private static bool WriteLogUnlocked(string message)
         {
             try
             {
