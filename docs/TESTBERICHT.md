@@ -1,4 +1,4 @@
-# Testbericht · DEBATE AI 0.3.0
+# Testbericht · DEBATE AI 0.4.0
 
 Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler version 6.8.0.105 (Deb
 
@@ -7,8 +7,8 @@ Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler ver
 | Prüfung | Ergebnis |
 |---|---|
 | Kompilierung als C# 5 ohne Warnungen (Sprachstand des Windows-Compilers) | bestanden |
-| 32 automatische Logik-, Protokoll- und Signaltests (+1 Windows-Test übersprungen) | **32/32 bestanden, 5 Wiederholungen ohne Ausfall** |
-| Oberfläche startet, Anordnung lesbar (Mono-WinForms auf virtuellem Bildschirm) | bestanden |
+| 36 automatische Logik-, Protokoll- und Signaltests (+1 Windows-Test übersprungen) | **36/36 bestanden, 4 Wiederholungen ohne Ausfall** |
+| Oberfläche startet, Anordnung lesbar; Einrichtungsassistent öffnet beim ersten Start (Mono-WinForms auf virtuellem Bildschirm) | bestanden |
 | Website `typecheck` und `build` | bestanden (Stand 0.2.0, unverändert) |
 | **Live-Pflichtabnahme mit echtem Menschen über TikTok LIVE** | **nicht durchgeführt, ungetestet** |
 | Echte Windows-Audiogeräte, echte OpenAI-Realtime-Sitzung, Latenz | **nicht durchgeführt, ungetestet** |
@@ -23,6 +23,7 @@ Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler ver
 - **Fehler:** Zeitlimit ohne Antwort, einzelne vs. wiederholte Fehlschläge, ungültiger Schlüssel, Guthaben, Warnungen ohne Abbruch, Verbindungsende, keine vertraulichen Fehlertexte in Meldungen.
 - **Realtime-Protokoll** gegen einen simulierten Server: Sitzungskonfiguration (`semantic_vad`, `create_response:false`, `interrupt_response:false`, Geduld, Retention-Ratio, Transkription, Stimme), KI-Hinweis außerhalb des Verlaufs, Audio-Streaming in Stücken, Antwortzuordnung per `response_id`, Gedächtnis als Text-Antwort außerhalb des Verlaufs, `response.cancel`, `conversation.item.delete`, `conversation.item.truncate`.
 - **Latenzmessung** und Live-Testbericht.
+- **Einrichtung:** Geräteempfehlung je Szenario (Banana B2/AUX, Standard-Voicemeeter B1, Mikrofon/Kopfhörer), Warnungen bei Echo-gefährdetem Routing, Persönlichkeitsprofile (Rundlauf, ungültige Werte), Stimmprobe inklusive Fehlerfall.
 
 ## Grenzen dieser Tests
 
@@ -62,6 +63,10 @@ OK  Echoprüfung: Echo, kein Echo, unklar
 OK  Echo-Erkennung unterscheidet Echo und Gast
 OK  Live-Messwerte und Testprotokoll
 OK  Persönlichkeit, Debattenmethode, Gedächtnis, KI-Hinweis
+OK  Einrichtungsassistent: Geräteempfehlung je Szenario
+OK  Einrichtungsassistent: Warnungen bei Echo-gefährdetem Routing
+OK  Persönlichkeitsprofile speichern und laden
+OK  Stimmprobe spielt NOVAs Stimme und schließt die Sitzung
 OK  Realtime: Sitzungsaufbau, semantische VAD, KI-Hinweis
 OK  Realtime: Live-Ereignisse, Antwort-Audio, Gedächtnis, Kürzen
 OK  Realtime: API-Fehler, Warnungen und Verbindungsende

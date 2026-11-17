@@ -1,16 +1,22 @@
 # DEBATE AI für Windows
 
-**Version 0.3.0 · NOVA, KI-Debattenpartnerin mit synthetischer Stimme**
+**Version 0.4.0 · NOVA, KI-Debattenpartnerin mit synthetischer Stimme**
 
 > Neu in 0.3.0: Live-Debatten im Vollduplex. NOVA hört auch zu, während sie spricht, erkennt das echte Satzende, lässt sich unterbrechen und merkt sich den Debattenverlauf. TikTok-Einrichtung: `docs/LIVE-SETUP.md`. Prüfstand: `docs/STATUS.md`.
 
 ## 0. Installation
 
-- **Installer:** `DEBATE-AI-Setup-0.3.0.exe` ausführen. Es sind keine Administratorrechte nötig; die App landet unter `%LOCALAPPDATA%\Programs\DEBATE AI` und im Startmenü.
+- **Installer:** `DEBATE-AI-Setup-0.4.0.exe` ausführen. Es sind keine Administratorrechte nötig; die App landet unter `%LOCALAPPDATA%\Programs\DEBATE AI` und im Startmenü.
 - **Ohne Installer:** `DEBATE-AI-portable.zip` entpacken und `DEBATE-AI.exe` starten (`DEBATE-AI.exe.config` muss daneben liegen).
 - **Selbst bauen:** `Neu-bauen.cmd` ausführen (nutzt den in Windows enthaltenen C#-Compiler von .NET Framework 4.8), danach `Selbsttest.cmd`.
 - **Systemanforderungen:** Windows 10 (ab 1903) oder Windows 11, .NET Framework 4.8 (bereits enthalten), Internetverbindung, ein OpenAI-API-Projekt mit Realtime-Zugriff und Guthaben.
 - **SmartScreen:** Solange der Installer nicht code-signiert ist, zeigt Windows „Der Computer wurde durch Windows geschützt“. Über „Weitere Informationen → Trotzdem ausführen“ geht es weiter. Für den Verkauf wird ein Code-Signing-Zertifikat benötigt (siehe `docs/STATUS.md`).
+
+## 0a. Einrichtungsassistent (empfohlen)
+
+Beim ersten Start öffnet sich der **Einrichtungsassistent**; später über den gleichnamigen Knopf. Er führt in 8 Schritten durch Szenario (TikTok LIVE Studio, OBS, Discord, lokal), Gast-Eingang, NOVA-Ausgang, Pegel, Stimmprobe, Echoprüfung und die passenden Einstellungen und startet danach die Debatte. Bei riskanter Geräteauswahl warnt er vor Echo.
+
+**Persönlichkeitsprofile:** Unter „2 · NOVA-Persönlichkeit“ einen Namen ins Feld „Profil“ schreiben und „Profil speichern“. Gespeicherte Profile lassen sich dort auswählen oder löschen.
 
 ## 1. Erste Probe ohne KI (Offline-Probe)
 

@@ -1,5 +1,14 @@
 # Änderungsprotokoll
 
+## 0.4.0 · 17.11.2026
+
+### Neu
+- **Einrichtungsassistent** in 8 Schritten: Szenario, Gast-Eingang, NOVA-Ausgang, Pegel, Stimmprobe, Echoprüfung, empfohlene Einstellungen, Start. Öffnet sich beim ersten Start automatisch.
+- Fertige Profile für **TikTok LIVE Studio, OBS Studio, Discord und lokale Debatten** mit Geräteempfehlung und Routing-Anleitung.
+- Warnungen bei Echo-gefährdeter Geräteauswahl (Voicemeeter-Haupteingang als NOVA-Ausgang, B1 als Gast-Eingang, gleiches virtuelles Kabel, Lautsprecher).
+- **Stimmprobe** mit NOVAs echter Stimme auf dem gewählten Ausgang.
+- **Persönlichkeitsprofile** speichern, laden und löschen.
+
 ## 0.3.0 · 17.11.2026
 
 **Hauptziel: echte Live-Debatte Mensch gegen NOVA (TikTok LIVE).** Ungetestet auf echter Hardware, siehe `docs/STATUS.md`.

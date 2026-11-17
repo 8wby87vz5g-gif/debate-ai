@@ -43,6 +43,10 @@ namespace DebateAI
                 Run("Echo-Erkennung unterscheidet Echo und Gast", TestEchoGuard);
                 Run("Live-Messwerte und Testprotokoll", TestMetrics);
                 Run("Persönlichkeit, Debattenmethode, Gedächtnis, KI-Hinweis", TestPersona);
+                Run("Einrichtungsassistent: Geräteempfehlung je Szenario", TestSetupPick);
+                Run("Einrichtungsassistent: Warnungen bei Echo-gefährdetem Routing", TestSetupCheck);
+                Run("Persönlichkeitsprofile speichern und laden", TestProfiles);
+                Run("Stimmprobe spielt NOVAs Stimme und schließt die Sitzung", TestVoiceTest);
                 Run("Realtime: Sitzungsaufbau, semantische VAD, KI-Hinweis", TestRealtimeStart);
                 Run("Realtime: Live-Ereignisse, Antwort-Audio, Gedächtnis, Kürzen", TestRealtimeLive);
                 Run("Realtime: API-Fehler, Warnungen und Verbindungsende", TestRealtimeErrors);
@@ -564,6 +568,66 @@ namespace DebateAI
             Check(!persona.IsDisclosure("Ich bin eine künstliche Intelligenz."), "Hinweis ohne Namen akzeptiert");
             Check(new Persona { Language = 1 }.Instructions().Contains("Englisch") && new Persona { Language = 1 }.LanguageCode == "en", "Sprache fehlt");
             Check(new Persona { Name = "   " }.Disclosure().Contains("Nova") && new Persona { Length = 9 }.MaxOutputTokens == 3200, "Grenzwerte falsch");
+        }
+
+        private static readonly string[] BananaInputs = { "Mikrofon (Realtek)", "Voicemeeter Out B1 (VB-Audio Voicemeeter VAIO)", "Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO)" };
+        private static readonly string[] BananaOutputs = { "Lautsprecher (Realtek)", "Kopfhörer (USB Headset)", "Voicemeeter Input (VB-Audio Voicemeeter VAIO)", "Voicemeeter AUX Input (VB-Audio Voicemeeter AUX VAIO)" };
+
+        private static void TestSetupPick()
+        {
+            ScenarioPreset tiktok = Setup.Presets[0], local = Setup.Presets[3];
+            Check(Setup.Pick(BananaInputs, tiktok.Inputs, null) == 2 && Setup.Pick(BananaOutputs, tiktok.Outputs, tiktok.AvoidOutputs) == 3,
+                "TikTok: B2 als Eingang und AUX als Ausgang erwartet");
+            Check(Setup.Pick(BananaInputs, local.Inputs, null) == 0 && Setup.Pick(BananaOutputs, local.Outputs, local.AvoidOutputs) == 1,
+                "Lokal: Mikrofon und Kopfhörer erwartet");
+            Check(Setup.Pick(new[] { "Voicemeeter Input (VAIO)" }, local.Outputs, local.AvoidOutputs) == -1, "Lokal darf kein virtuelles Gerät wählen");
+            Check(Setup.Pick(new string[0], tiktok.Inputs, null) == -1, "Leere Geräteliste");
+            Check(Setup.Pick(new[] { "Voicemeeter Out B1" }, tiktok.Inputs, null) == 0, "Standard-Voicemeeter: B1 als Rückfall");
+            foreach (ScenarioPreset preset in Setup.Presets)
+                Check(preset.Mode >= 0 && preset.Mode < 3 && preset.Patience < 3 && preset.BargeIn < 3 && preset.Length < Persona.Lengths.Length &&
+                    preset.Summary.Length > 20 && preset.Routing.Length > 20, "Preset unvollständig: " + preset.Name);
+        }
+
+        private static void TestSetupCheck()
+        {
+            Check(Setup.Check("Voicemeeter Out B2", "Voicemeeter AUX Input").Count == 0, "Korrektes Banana-Routing wird bemängelt");
+            Check(Setup.Check("Mikrofon", "Kopfhörer").Count == 0, "Kopfhörer werden bemängelt");
+            Check(Setup.Check("Voicemeeter Out B2", "Voicemeeter Input (VAIO)").Count == 1, "Haupteingang als NOVA-Ausgang nicht gewarnt");
+            Check(Setup.Check("Voicemeeter Out B1", "Voicemeeter AUX Input").Count == 1, "B1 als Gast-Eingang nicht gewarnt");
+            Check(Setup.Check("CABLE Output", "CABLE Input").Count == 1, "Gleiches virtuelles Kabel nicht gewarnt");
+            Check(Setup.Check("Mikrofon", "Lautsprecher (Realtek)").Count == 1 && Setup.Speakers("Speakers (USB)"), "Lautsprecher nicht gewarnt");
+            Check(Setup.Check("", "").Count == 2, "Fehlende Geräte nicht gemeldet");
+        }
+
+        private static void TestProfiles()
+        {
+            var original = new Persona { Name = "Kira", Style = 3, Intensity = 2, Length = 2, Voice = "cedar", Language = 1, Topic = "Tempolimit", Position = "Dagegen" };
+            var json = new JavaScriptSerializer();
+            var stored = json.Deserialize<Dictionary<string, object>>(json.Serialize(new Dictionary<string, object> { { "Kira", original.ToValues() } }));
+            Persona loaded = Persona.FromValues(stored["Kira"] as Dictionary<string, object>);
+            Check(loaded.Name == "Kira" && loaded.Style == 3 && loaded.Intensity == 2 && loaded.Length == 2 && loaded.Voice == "cedar" &&
+                loaded.Language == 1 && loaded.Topic == "Tempolimit" && loaded.Position == "Dagegen", "Profil-Rundlauf fehlerhaft");
+            var broken = new Dictionary<string, object> { { "style", 99 }, { "voice", "unbekannt" }, { "language", -3 } };
+            Persona safe = Persona.FromValues(broken);
+            Check(safe.Style == Persona.Styles.Length - 1 && safe.Voice == "marin" && safe.Language == 0 && safe.Name == "Nova", "Ungültige Profilwerte nicht abgefangen");
+            Check(Persona.FromValues(null).Name == "Nova", "Leeres Profil");
+        }
+
+        private static void TestVoiceTest()
+        {
+            long time = 0;
+            using (var session = new DebateSession(() => time))
+            {
+                var output = new FakePlayback();
+                var voice = new FakeDebater { Intro = Long(800) };
+                Wait(session.VoiceTest(() => output, () => voice));
+                Check(session.State == Phase.Tone && output.Plays == 1 && voice.DisclosureRequested && voice.Closed, "Stimmprobe fehlt oder Sitzung bleibt offen");
+                output.Done = true; Wait(session.Tick());
+                Check(session.State == Phase.Idle && output.Closed, "Stimmprobe endet nicht");
+                var failing = new FakeDebater { StartError = new AppError("API-Schlüssel abgelehnt.") };
+                Wait(session.VoiceTest(() => new FakePlayback(), () => failing));
+                Check(session.State == Phase.Idle && session.Note.Contains("abgelehnt") && failing.Closed, "Fehler bei der Stimmprobe nicht gemeldet");
+            }
         }
 
         private static void TestRealtimeStart()

@@ -289,6 +289,27 @@ namespace DebateAI
             catch (Exception error) { Fail(error); }
         }
 
+        // Lets NOVA speak her AI disclosure once on the chosen output, so the user hears the real voice.
+        public async Task VoiceTest(Func<IPlayback> openOutput, Func<IDebater> create)
+        {
+            if (!ReadyForStart) return;
+            lifetime = new CancellationTokenSource();
+            CancellationToken token = lifetime.Token;
+            Set(Phase.Connecting, "NOVAs Stimmprobe wird erzeugt …");
+            try
+            {
+                playback = openOutput();
+                IDebater voice = create();
+                byte[] sample;
+                try { sample = await voice.Start(true, token); }
+                finally { Close(voice); }
+                if (token.IsCancellationRequested) return;
+                playback.Play(sample != null && sample.Length != 0 ? sample : WinAudio.Tone(1200, 550));
+                Set(Phase.Tone, "Stimmprobe läuft auf dem gewählten Ausgang.");
+            }
+            catch (Exception error) { if (!token.IsCancellationRequested) Fail(error); }
+        }
+
         // Plays a speech-like test signal on NOVA's output and checks whether it returns on the input.
         public void CheckEcho(Func<ICapture> openInput, Func<IPlayback> openOutput)
         {

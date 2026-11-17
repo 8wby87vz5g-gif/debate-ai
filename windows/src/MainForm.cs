@@ -128,9 +128,9 @@ namespace DebateAI
         }
     }
 
-    internal sealed class MainForm : Form
+    internal sealed partial class MainForm : Form
     {
-        public const string Version = "0.3.0";
+        public const string Version = "0.4.0";
 
         private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();
@@ -147,13 +147,16 @@ namespace DebateAI
         private readonly ToolTip tips = new ToolTip();
         private readonly Button refresh = Button("Geräte neu laden"), setup = Button("Voicemeeter finden"), routing = Button("Routing-Hilfe"),
             key = Button("API-Schlüssel"), log = Button("Protokollordner"), wipe = Button("Lokale Daten löschen"),
-            echoCheck = Button("Echoprüfung"), report = Button("Live-Testbericht speichern"), monitor = Button("Pegel prüfen"), tone = Button("Testton");
+            echoCheck = Button("Echoprüfung"), report = Button("Live-Testbericht speichern"),
+            wizard = Big("Einrichtungsassistent", Theme.Cyan), saveProfile = Button("Profil speichern"), deleteProfile = Button("Löschen"), monitor = Button("Pegel prüfen"), tone = Button("Testton");
         private readonly Button start = Big("Debatte starten", Theme.Green), pause = Big("Pause", Theme.Amber),
             interrupt = Big("NOVA unterbrechen", Theme.Magenta), push = Big("Jetzt antworten", Theme.Cyan),
             moderate = Big("Ruhe in der Debatte", Theme.Violet), stop = Big("Not-Aus (Esc)", Theme.Red), mute = Big("NOVA stumm", Theme.Amber);
         private readonly Label state = new Label { AutoSize = true, Font = new Font("Segoe UI", 16, FontStyle.Bold), ForeColor = Theme.Text };
         private readonly Label note = new Label { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Muted };
         private readonly Label warning = new Label { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Amber, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+        private readonly ComboBox profileBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, BackColor = Theme.Field, ForeColor = Theme.Text, Width = 250, MaxLength = 40 };
+        private Dictionary<string, object> profiles = new Dictionary<string, object>();
         private readonly Label api = new Label { AutoSize = true, ForeColor = Theme.Muted };
         private readonly Label live = new Label { AutoSize = true, ForeColor = Theme.Cyan };
         private readonly Label levelText = new Label { AutoSize = true, Text = "—", ForeColor = Theme.Muted };
@@ -195,14 +198,12 @@ namespace DebateAI
             key.Click += delegate { EditKey(); };
             log.Click += delegate { OpenLog(); };
             wipe.Click += delegate { WipeLocalData(); };
-            start.Click += async delegate
-            {
-                if (!offline.Checked && !informed.Checked) return;
-                wiped = false;
-                SaveSettings();
-                AddLine("System", offline.Checked ? "Offline-Probe gestartet (nur Piepton)." : "Debatte gestartet. " + new Persona { Name = personaName.Text }.Disclosure());
-                await session.Start(OpenInput, OpenOutput, CreateDebater, Options());
-            };
+            start.Click += async delegate { await StartDebate(); };
+            wizard.Click += delegate { ShowWizard(); };
+            saveProfile.Click += delegate { SaveProfile(); };
+            deleteProfile.Click += delegate { DeleteProfile(); };
+            profileBox.SelectedIndexChanged += delegate { LoadProfile(profileBox.SelectedItem as string); };
+            Shown += delegate { if (!settingsExisted) BeginInvoke(new Action(ShowWizard)); };
             pause.Click += delegate { session.Stop(true); };
             stop.Click += delegate { session.Stop(false); };
             moderate.Click += delegate { session.Moderate(); };
@@ -227,6 +228,56 @@ namespace DebateAI
             RefreshDevices();
             RestoreDevices();
             tick.Start();
+        }
+
+        private bool settingsExisted;
+
+        private async System.Threading.Tasks.Task StartDebate()
+        {
+            if (!session.ReadyForStart || input.SelectedItem == null || output.SelectedItem == null) return;
+            if (!offline.Checked && (!informed.Checked || !LocalData.HasKey)) return;
+            wiped = false;
+            SaveSettings();
+            AddLine("System", offline.Checked ? "Offline-Probe gestartet (nur Piepton)." : "Debatte gestartet. " + new Persona { Name = personaName.Text }.Disclosure());
+            await session.Start(OpenInput, OpenOutput, CreateDebater, Options());
+        }
+
+        private void SaveProfile()
+        {
+            string name = (profileBox.Text ?? "").Trim();
+            if (name.Length == 0) name = (personaName.Text ?? "").Trim() + " · " + style.Text;
+            if (name.Length > 40) name = name.Substring(0, 40);
+            profiles[name] = CurrentPersona().ToValues();
+            FillProfiles(name);
+            SaveSettings();
+            AddLine("System", "Persönlichkeitsprofil „" + name + "“ gespeichert.");
+        }
+
+        private void DeleteProfile()
+        {
+            string name = profileBox.SelectedItem as string ?? profileBox.Text;
+            if (string.IsNullOrEmpty(name) || !profiles.Remove(name)) return;
+            FillProfiles(null);
+            SaveSettings();
+        }
+
+        private void LoadProfile(string name)
+        {
+            object stored;
+            if (name == null || !profiles.TryGetValue(name, out stored)) return;
+            Persona persona = Persona.FromValues(stored as Dictionary<string, object>);
+            personaName.Text = persona.Name; style.SelectedIndex = persona.Style; intensity.SelectedIndex = persona.Intensity;
+            length.SelectedIndex = persona.Length; voice.SelectedItem = persona.Voice; language.SelectedIndex = persona.Language;
+            topic.Text = persona.Topic; position.Text = persona.Position;
+        }
+
+        private void FillProfiles(string select)
+        {
+            var names = new List<string>(profiles.Keys);
+            names.Sort(StringComparer.CurrentCultureIgnoreCase);
+            profileBox.Items.Clear();
+            foreach (string name in names) profileBox.Items.Add(name);
+            if (select != null) profileBox.SelectedItem = select; else profileBox.Text = "";
         }
 
         private void Fill()
@@ -272,8 +323,9 @@ namespace DebateAI
 
             left.Controls.Add(Section("1 · AUDIO",
                 Grid(Pair("Eingang · Gesprächspartner", input), Pair("Ausgang · NOVA-Stimme", output)),
-                Row(refresh, setup, routing), Row(monitor, tone, echoCheck), Row(Caption("Pegel"), levelText)));
+                Row(wizard), Row(refresh, setup, routing), Row(monitor, tone, echoCheck), Row(Caption("Pegel"), levelText)));
             left.Controls.Add(Section("2 · NOVA-PERSÖNLICHKEIT",
+                Row(Caption("Profil"), profileBox, saveProfile, deleteProfile),
                 Grid(Pair("Name", personaName), Pair("Stil", style), Pair("Intensität", intensity), Pair("Antwortlänge", length),
                      Pair("Stimme", voice), Pair("Sprache", language), Pair("Thema", topic), Pair("NOVAs Position", position)),
                 transcribe));
@@ -476,7 +528,7 @@ namespace DebateAI
             bool measuring = session.State == Phase.Meter;
             foreach (Control control in new Control[] { input, output, mode, threshold, guard, pauseMs, refresh, setup, offline, key, fairness,
                 turnSeconds, style, intensity, length, voice, language, personaName, topic, position, transcribe, wipe, patience, barge, echoGuard,
-                memory, bargeMs, proactive })
+                memory, bargeMs, proactive, wizard, profileBox, saveProfile, deleteProfile })
                 control.Enabled = ready;
             informed.Enabled = ready && !offline.Checked;
             start.Enabled = ready && hasInput && hasOutput && (offline.Checked || informed.Checked && LocalData.HasKey);
@@ -629,12 +681,17 @@ namespace DebateAI
             values["threshold"] = (int)threshold.Value; values["pause"] = (int)pauseMs.Value; values["guard"] = (int)guard.Value; values["turn"] = (int)turnSeconds.Value;
             var inDevice = input.SelectedItem as Device; var outDevice = output.SelectedItem as Device;
             values["input"] = inDevice == null ? "" : inDevice.Name; values["output"] = outDevice == null ? "" : outDevice.Name;
+            values["profiles"] = profiles;
             LocalData.SaveSettings(values);
         }
 
         private void LoadSettings()
         {
+            settingsExisted = System.IO.File.Exists(LocalData.SettingsFile);
             var values = LocalData.LoadSettings();
+            object stored;
+            if (values.TryGetValue("profiles", out stored) && stored is Dictionary<string, object>) profiles = (Dictionary<string, object>)stored;
+            FillProfiles(null);
             Select(mode, values, "mode"); Select(style, values, "style"); Select(intensity, values, "intensity");
             Select(length, values, "length"); Select(voice, values, "voice"); Select(language, values, "language");
             personaName.Text = LocalData.Text(values, "name", personaName.Text);

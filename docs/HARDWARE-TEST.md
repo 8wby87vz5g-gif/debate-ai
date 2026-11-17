@@ -1,8 +1,8 @@
-# DEBATE AI 0.3.0 · Live-Abnahme auf echter Hardware
+# DEBATE AI 0.4.0 · Live-Abnahme auf echter Hardware
 
 Die Live-Funktion gilt erst als fertig, wenn Teil B mit einem echten Menschen bestanden und dokumentiert ist. Diese Tests sind **bisher nicht durchgeführt** (Stand 17.11.2026), weil die Entwicklungsumgebung weder Windows-Audio noch einen OpenAI-Schlüssel noch TikTok hat.
 
-**Vorbereitung:** Installer `DEBATE-AI-Setup-0.3.0.exe` oder `Neu-bauen.cmd` + `Selbsttest.cmd` (muss mit lauter `OK` enden). Routing nach `docs/LIVE-SETUP.md`.
+**Vorbereitung:** Installer `DEBATE-AI-Setup-0.4.0.exe` oder `Neu-bauen.cmd` + `Selbsttest.cmd` (muss mit lauter `OK` enden). Routing nach `docs/LIVE-SETUP.md`, am einfachsten mit dem **Einrichtungsassistenten** (Szenario „TikTok LIVE Studio“).
 
 ## Teil A · Technische Vorprüfung (ca. 15 Minuten, ohne Gast)
 

@@ -1,6 +1,6 @@
 # DEBATE AI · Projektstatus
 
-Stand: 17.11.2026 · Windows-Client 0.3.0
+Stand: 17.11.2026 · Windows-Client 0.4.0
 
 Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter Hardware / mit echter OpenAI-Verbindung / mit TikTok** · 🟡 teilweise · ❌ fehlt
 
@@ -37,11 +37,11 @@ Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter H
 
 | Komponente | Status |
 |---|---|
-| Persönlichkeiten (5 Stile, Intensität, Länge, Stimme, Sprache, Thema, Position) | ✅ · eigene Profile speichern ❌ |
+| Persönlichkeiten (5 Stile, Intensität, Länge, Stimme, Sprache, Thema, Position), eigene Profile | ✅ |
 | Dunkle Oberfläche, Statussymbol, Wellenform, Statusanzeigen | 🟡 unter Mono geprüft, unter Windows ungesehen |
 | Einstellungen speichern, lokale Daten löschen | ✅ |
 | Geräteerkennung Voicemeeter Standard/Banana | 🟡 aus 0.1.2 |
-| Geführter Einrichtungsassistent | ❌ (Einzelschritte vorhanden: Geräte, Pegel, Testton, Echoprüfung) |
+| Geführter Einrichtungsassistent mit Profilen für TikTok LIVE Studio, OBS, Discord, lokal | ✅ Logik · ⚪ auf Windows ungesehen |
 | Modus C KI gegen KI | ❌ nach Live-Abnahme |
 | Modus D Moderation | ❌ nach Live-Abnahme |
 | Installer (Inno Setup), Windows-CI | ⚪ Skripte fertig, erster CI-Lauf ausstehend (GitHub-Repository fehlt) |
@@ -56,5 +56,5 @@ Heute trägt jeder Nutzer seinen eigenen OpenAI-Schlüssel ein. Für Abos darf k
 
 1. **Live-Pflichtabnahme** nach `docs/HARDWARE-TEST.md` (du, mit einem Gast).
 2. Fehler aus der Abnahme beheben, Latenz optimieren.
-3. Geführter Einrichtungsassistent, Persönlichkeitsprofile.
+3. ~~Geführter Einrichtungsassistent, Persönlichkeitsprofile~~ (erledigt in 0.4.0).
 4. Danach: KI gegen KI, Moderation, Website-Konten, Stripe, Lizenzserver, Updates, Signierung.
