@@ -1,5 +1,14 @@
 # Änderungsprotokoll
 
+## 0.6.1 · 17.11.2026 · Lokaler Modus unter echtem Windows getestet und beschleunigt
+
+- **Erstmals echt getestet** (Windows-VM bei GitHub, 4 Threads, ohne Grafikkarte): Download, whisper.cpp, Ollama, Piper und drei Debattenrunden je Modell. Läuft jetzt bei jedem Build mit.
+- Behoben: Absturz beim Lesen der Piper-Audiodatei während der Debatte (Datei noch von Windows gesperrt).
+- Behoben: whisper.cpp-Download schlug fehl, weil das neueste Release keine Windows-Datei enthält.
+- Schneller: kurze Anweisungen für lokale Modelle, feste Wortgrenze, Vorwärmen beim Start, Verlauf cachefreundlich, NOVA beginnt nach dem ersten Satzteil zu sprechen. gemma3:4b: 16–23 s → ca. 8 s.
+- Abgeschnittene Satzreste werden nicht mehr gesprochen.
+- Empfehlung ohne Grafikkarte jetzt llama3.2:3b (ca. 5 s auf dem Testrechner); Auswahl um qwen2.5:3b und gemma3:1b erweitert. Ollama-Zeiten (Lesen/Schreiben) im Protokoll.
+
 ## 0.6.0 · 17.11.2026 · Lokaler KI-Modus und Eigentümer-Lizenz
 
 - **KI-Modus wählbar:** OpenAI Realtime (kostenpflichtig, Premium) · Lokal auf diesem PC (kostenlos) · Offline-Probe. Deutliche Modusanzeige mit Kosten.

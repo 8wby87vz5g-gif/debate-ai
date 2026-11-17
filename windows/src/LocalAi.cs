@@ -109,6 +109,15 @@ namespace DebateAI
                     char c = text[i];
                     if ((c == '.' || c == '!' || c == '?' || c == ':' || c == ';') && char.IsWhiteSpace(text[i + 1]) && i >= 12) { cut = i + 1; break; }
                 }
+                // First chunk of an answer: start speaking at the first comma after a few words,
+                // so NOVA's voice starts while the model is still writing the rest.
+                if (cut < 0 && !Emitted)
+                {
+                    int comma = text.IndexOf(", ", StringComparison.Ordinal);
+                    while (comma >= 0 && text.Substring(0, comma).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length < 6)
+                        comma = text.IndexOf(", ", comma + 2, StringComparison.Ordinal);
+                    if (comma >= 0) cut = comma + 1;
+                }
                 if (cut < 0 && text.Length > 180)
                 {
                     int comma = text.LastIndexOf(", ", 180, StringComparison.Ordinal);

@@ -15,7 +15,7 @@ namespace DebateAI
 {
     internal sealed class LocalModels
     {
-        public string Llm = "gemma3:4b";
+        public string Llm = "llama3.2:3b";
         public string Whisper = "base";
         public string Voice = "de_DE-thorsten-medium";
         public int Threads = 4;
@@ -203,18 +203,19 @@ namespace DebateAI
             }
             else if (hw.RamGb <= 0)
             {
-                models.Llm = "gemma3:4b"; models.Whisper = "base";
+                models.Llm = "llama3.2:3b"; models.Whisper = "base";
                 reason = "Der Arbeitsspeicher konnte nicht ermittelt werden. Standardempfehlung; bitte die Geschwindigkeit messen.";
             }
             else if (hw.RamGb >= 7)
             {
-                models.Llm = "gemma3:4b"; models.Whisper = "base";
-                reason = "Ohne starke Grafikkarte läuft alles auf dem Prozessor. Gemma 3 4B gilt als gutes kleines Modell für Deutsch; Whisper Base hält die Erkennung schnell.";
+                models.Llm = "llama3.2:3b"; models.Whisper = "base";
+                reason = "Ohne starke Grafikkarte läuft alles auf dem Prozessor. Llama 3.2 3B antwortet dort am ausgewogensten zwischen Tempo und Inhalt " +
+                    "(Testrechner mit 4 Threads: ca. 5 s Reaktionszeit). Besseres Deutsch, aber langsamer: gemma3:4b (ca. 8 s). Schneller, aber sehr knapp: qwen2.5:3b (ca. 4 s).";
             }
             else
             {
-                models.Llm = "llama3.2:3b"; models.Whisper = "tiny";
-                reason = "Wenig Arbeitsspeicher: kleinstes sinnvolles Modell (Llama 3.2 3B) und schnellste Spracherkennung. Deutlich einfachere Antworten zu erwarten.";
+                models.Llm = "qwen2.5:3b"; models.Whisper = "tiny";
+                reason = "Wenig Arbeitsspeicher: schnelles kleines Modell (Qwen 2.5 3B) und schnellste Spracherkennung. Deutlich einfachere, knappe Antworten zu erwarten.";
             }
             return models;
         }

@@ -859,6 +859,12 @@ namespace DebateAI
             Check(got.Count == 3 && got[0] == "Das sehe ich anders." && got[1] == "Ein Tempolimit rettet Leben!" && got[2] == "Und was ist mit dir?", "Satzaufteilung falsch: " + string.Join("|", got));
             var shortOnes = new SentenceSplitter();
             Check(shortOnes.Add("Ja. Nein. ").Count == 0, "Zu kurze Satzstücke dürfen nicht einzeln gesprochen werden");
+            var clause = new SentenceSplitter();
+            List<string> early = clause.Add("Das sehe ich bei Tempo 130 ganz anders, denn weniger Tempo");
+            Check(early.Count == 1 && early[0] == "Das sehe ich bei Tempo 130 ganz anders,", "Erster Satzteil wird nicht früh gesprochen: " + string.Join("|", early));
+            Check(clause.Add(" heißt weniger Unfälle, sagen viele. ").Count == 1, "Nach dem ersten Stück nur ganze Sätze");
+            var fewWords = new SentenceSplitter();
+            Check(fewWords.Add("Nein, das ").Count == 0, "Komma nach zu wenigen Wörtern darf nicht teilen");
             var longOne = new SentenceSplitter();
             Check(longOne.Add(new string('a', 100) + ", " + new string('b', 100)).Count == 1, "Lange Sätze ohne Punkt werden nicht geteilt");
             Check(WhisperServer.Clean(" [Musik] ") == "" && WhisperServer.Clean("(Applaus)") == "" && WhisperServer.Clean(" Hallo Welt.\n") == "Hallo Welt.", "Whisper-Bereinigung falsch");
@@ -996,12 +1002,12 @@ namespace DebateAI
             Check(Downloader.PickUrl("{\"assets\":[{\"name\":\"piper_windows_amd64.zip\",\"browser_download_url\":\"https://x/p.zip\"}]}", "piper_windows_amd64.zip", new[] { "windows" }, new string[0]) == "https://x/p.zip", "Einzelnes Release nicht gelesen");
             Check(Downloader.PickUrl("[]", "a.zip", new string[0], new string[0]) == null, "Leere Releaseliste");
             LocalModels laptop = ModelAdvisor.Recommend(new HardwareInfo { RamGb = 15.7, Cores = 8, Cpu = "Intel Core i5" }, out reason);
-            Check(laptop.Llm == "gemma3:4b" && laptop.Whisper == "base" && laptop.Threads == 7 && reason.Contains("Prozessor"), "Empfehlung Laptop falsch");
+            Check(laptop.Llm == "llama3.2:3b" && laptop.Whisper == "base" && laptop.Threads == 7 && reason.Contains("Prozessor"), "Empfehlung Laptop falsch");
             var gaming = new HardwareInfo { RamGb = 32, Cores = 16 };
             gaming.NvidiaVramGb = HardwareInfo.VramFromName("NVIDIA GeForce RTX 4070");
             Check(ModelAdvisor.Recommend(gaming, out reason).Llm == "qwen3:8b" && gaming.NvidiaVramGb == 12, "Empfehlung Grafikkarte falsch");
-            Check(ModelAdvisor.Recommend(new HardwareInfo { RamGb = 4, Cores = 4 }, out reason).Llm == "llama3.2:3b", "Empfehlung wenig RAM falsch");
-            Check(ModelAdvisor.Recommend(new HardwareInfo { RamGb = 0, Cores = 2 }, out reason).Llm == "gemma3:4b" && reason.Contains("nicht ermittelt"), "Unbekannte Hardware falsch behandelt");
+            Check(ModelAdvisor.Recommend(new HardwareInfo { RamGb = 4, Cores = 4 }, out reason).Llm == "qwen2.5:3b", "Empfehlung wenig RAM falsch");
+            Check(ModelAdvisor.Recommend(new HardwareInfo { RamGb = 0, Cores = 2 }, out reason).Llm == "llama3.2:3b" && reason.Contains("nicht ermittelt"), "Unbekannte Hardware falsch behandelt");
             var assets = new List<string> { "whisper-blas-bin-x64.zip", "whisper-cublas-12.4.0-bin-x64.zip", "whisper-bin-Win32.zip", "whisper-bin-x64.zip" };
             Check(LocalSources.PickAsset(assets, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "blas", "cuda" }) == "whisper-bin-x64.zip", "Download-Auswahl falsch");
             assets.RemoveAt(3);

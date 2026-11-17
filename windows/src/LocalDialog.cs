@@ -37,7 +37,7 @@ namespace DebateAI
                 var hwText = Hint(760, Theme.Text, hw.Describe());
                 var recText = Hint(760, Theme.Muted, "Empfehlung vor der Messung: " + recommended.Llm + " · Whisper " + recommended.Whisper + ". " + reason);
                 var llmBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 260, BackColor = Theme.Field, ForeColor = Theme.Text };
-                llmBox.Items.AddRange(new object[] { "gemma3:4b", "qwen3:4b", "llama3.2:3b", "qwen3:8b", "gemma3:12b", "mistral" });
+                llmBox.Items.AddRange(new object[] { "llama3.2:3b", "gemma3:4b", "qwen2.5:3b", "gemma3:1b", "qwen3:4b", "qwen3:8b", "gemma3:12b" });
                 llmBox.Text = localModels.Llm;
                 ComboBox whisperBox = Combo(), voiceBox = Combo();
                 whisperBox.Width = 120; voiceBox.Width = 360;
@@ -65,7 +65,7 @@ namespace DebateAI
 
                 Action read = () =>
                 {
-                    localModels.Llm = (llmBox.Text ?? "").Trim().Length == 0 ? "gemma3:4b" : llmBox.Text.Trim();
+                    localModels.Llm = (llmBox.Text ?? "").Trim().Length == 0 ? "llama3.2:3b" : llmBox.Text.Trim();
                     localModels.Whisper = whisperBox.SelectedItem as string ?? "base";
                     var voice = voiceBox.SelectedItem as VoiceChoice;
                     localModels.Voice = voice == null ? LocalSources.Voices[0].Id : voice.Id;

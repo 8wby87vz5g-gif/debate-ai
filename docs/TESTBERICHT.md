@@ -1,4 +1,4 @@
-# Testbericht · DEBATE AI 0.6.0
+# Testbericht · DEBATE AI 0.6.1
 
 Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler version 6.8.0.105 (Deb
 
@@ -14,7 +14,7 @@ Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler ver
 | TikTok-Prüfdialog startet und zeigt ohne Voicemeeter ehrlich „nicht installiert“, keine Startfreigabe (Mono, virtueller Bildschirm) | bestanden |
 | **Live-Pflichtabnahme mit echtem Menschen über TikTok LIVE** | **nicht durchgeführt, ungetestet** |
 | Voicemeeter-Fernsteuerung gegen echtes Voicemeeter Banana | **ungetestet** (nur gegen simuliertes Mischpult) |
-| Lokaler Modus mit echtem whisper.cpp, Ollama und Piper; Geschwindigkeit | **ungetestet** (Pipeline mit simulierten Modellen getestet; Messfunktion vorhanden) |
+| Lokaler Modus mit echtem whisper.cpp, Ollama und Piper | **bestanden auf GitHub-Windows-VM** (4 Threads, ohne GPU): Download, Messung, je 3 Debattenrunden mit 4 Modellen, Reaktionszeit 3,8–8,1 s; Werte in `docs/LOKALE-KI.md`. **Auf deinem PC ungetestet.** |
 | Lizenzwerkzeug: Schlüssel erzeugen und Eigentümer-Lizenz signieren | bestanden (Mono; unter Windows in der CI) |
 | Echte Windows-Audiogeräte, echte OpenAI-Realtime-Sitzung, Latenz | **nicht durchgeführt, ungetestet** |
 
