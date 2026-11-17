@@ -130,7 +130,7 @@ namespace DebateAI
 
     internal sealed partial class MainForm : Form
     {
-        public const string Version = "0.4.1";
+        public const string Version = "0.5.0";
 
         private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();
@@ -143,22 +143,26 @@ namespace DebateAI
         private readonly CheckBox informed = Wide("Alle Sprecher wissen, dass NOVA eine KI ist und ihre Beiträge an OpenAI gehen, und sind einverstanden.");
         private readonly NumericUpDown threshold = Number(-60, -15, -40, 1), pauseMs = Number(300, 3000, 1200, 100),
             guard = Number(400, 2500, 900, 100), turnSeconds = Number(5, 120, 30, 5),
-            bargeMs = Number(200, 2000, 500, 100), proactive = Number(0, 60, 0, 5);
+            bargeMs = Number(200, 2000, 500, 100), proactive = Number(0, 60, 0, 5), costLimit = Number(0, 100, 5, 1);
         private readonly ToolTip tips = new ToolTip();
         private readonly Button refresh = Button("Geräte neu laden"), setup = Button("Voicemeeter finden"), routing = Button("Routing-Hilfe"),
             key = Button("API-Schlüssel"), log = Button("Protokollordner"), wipe = Button("Lokale Daten löschen"),
             echoCheck = Button("Echoprüfung"), report = Button("Live-Testbericht speichern"),
-            wizard = Big("Einrichtungsassistent", Theme.Cyan), saveProfile = Button("Profil speichern"), deleteProfile = Button("Löschen"), monitor = Button("Pegel prüfen"), tone = Button("Testton");
+            wizard = Big("Einrichtungsassistent", Theme.Cyan), tiktok = Big("TikTok LIVE verbinden", Theme.Magenta),
+            letFinish = Big("Gast ausreden lassen: an", Theme.Cyan), saveProfile = Button("Profil speichern"), deleteProfile = Button("Löschen"), monitor = Button("Pegel prüfen"), tone = Button("Testton");
         private readonly Button start = Big("Debatte starten", Theme.Green), pause = Big("Pause", Theme.Amber),
             interrupt = Big("NOVA unterbrechen", Theme.Magenta), push = Big("Jetzt antworten", Theme.Cyan),
             moderate = Big("Ruhe in der Debatte", Theme.Violet), stop = Big("Not-Aus (Esc)", Theme.Red), mute = Big("NOVA stumm", Theme.Amber);
         private readonly Label state = new Label { AutoSize = true, Font = new Font("Segoe UI", 16, FontStyle.Bold), ForeColor = Theme.Text };
         private readonly Label note = new Label { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Muted };
         private readonly Label warning = new Label { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Amber, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
-        private readonly ComboBox profileBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, BackColor = Theme.Field, ForeColor = Theme.Text, Width = 250, MaxLength = 40 };
+        private readonly ComboBox profileBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, BackColor = Theme.Field, ForeColor = Theme.Text, Width = 190, MaxLength = 40 };
         private Dictionary<string, object> profiles = new Dictionary<string, object>();
         private readonly Label api = new Label { AutoSize = true, ForeColor = Theme.Muted };
         private readonly Label live = new Label { AutoSize = true, ForeColor = Theme.Cyan };
+        private readonly Label lamps = new Label { AutoSize = true, ForeColor = Theme.Muted, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
+        private long lastInputActivity = -100000;
+        private readonly Stopwatch uiClock = Stopwatch.StartNew();
         private readonly Label levelText = new Label { AutoSize = true, Text = "—", ForeColor = Theme.Muted };
         private readonly NovaOrb orb = new NovaOrb();
         private readonly WaveView wave = new WaveView();
@@ -176,7 +180,7 @@ namespace DebateAI
             Text = "DEBATE AI " + Version + " · NOVA";
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(1180, 780);
+            ClientSize = new Size(1240, 800);
             MinimumSize = new Size(980, 640);
             Font = new Font("Segoe UI", 10);
             BackColor = Theme.Background;
@@ -201,6 +205,8 @@ namespace DebateAI
             wipe.Click += delegate { WipeLocalData(); };
             start.Click += async delegate { await StartDebate(); };
             wizard.Click += delegate { ShowWizard(); };
+            tiktok.Click += delegate { ShowLiveConnect(); };
+            letFinish.Click += delegate { session.Fairness = !session.Fairness; fairness.Checked = session.Fairness; Render(); };
             saveProfile.Click += delegate { SaveProfile(); };
             deleteProfile.Click += delegate { DeleteProfile(); };
             profileBox.SelectedIndexChanged += delegate { LoadProfile(profileBox.SelectedItem as string); };
@@ -232,6 +238,8 @@ namespace DebateAI
         }
 
         private bool settingsExisted;
+
+        private static string Lamp(bool on, string text) { return (on ? "● " : "○ ") + text; }
 
         private async System.Threading.Tasks.Task StartDebate()
         {
@@ -334,6 +342,7 @@ namespace DebateAI
                 Grid(Pair("Sprecherwechsel", mode), Pair("Geduld beim Satzende", patience), Pair("Wenn der Gast unterbricht", barge)),
                 fairness, echoGuard, memory,
                 Row(Caption("Unterbrechung ab ms"), bargeMs, Caption("Nachfrage nach s"), proactive),
+                Row(Caption("Kostenlimit $ pro Debatte (0 = aus)"), costLimit),
                 Row(Caption("Schwelle dBFS"), threshold, Caption("Sprechpause ms"), pauseMs),
                 Row(Caption("Nachlauf ms"), guard, Caption("Max. Redezeit s"), turnSeconds),
                 Row(offline), Row(key, log, wipe), Row(report), informed));
@@ -349,12 +358,12 @@ namespace DebateAI
             status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
             status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             var texts = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Fill };
-            texts.Controls.Add(state); texts.Controls.Add(note); texts.Controls.Add(warning); texts.Controls.Add(api); texts.Controls.Add(live);
+            texts.Controls.Add(state); texts.Controls.Add(note); texts.Controls.Add(warning); texts.Controls.Add(api); texts.Controls.Add(live); texts.Controls.Add(lamps);
             // Status texts wrap to the space that is actually left next to the orb.
             status.SizeChanged += delegate
             {
                 var wrap = new Size(Math.Max(200, status.ClientSize.Width - 200), 0);
-                note.MaximumSize = warning.MaximumSize = wrap;
+                note.MaximumSize = warning.MaximumSize = live.MaximumSize = lamps.MaximumSize = wrap;
             };
             status.Controls.Add(orb, 0, 0);
             status.Controls.Add(texts, 1, 0);
@@ -363,8 +372,9 @@ namespace DebateAI
             status.SetColumnSpan(wave, 2);
             right.Controls.Add(status, 0, 0);
 
-            var controls = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(0, 10, 0, 6) };
-            controls.Controls.AddRange(new Control[] { start, pause, push, interrupt, mute, moderate, stop });
+            var controls = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(0, 10, 0, 6), WrapContents = true };
+            right.SizeChanged += delegate { controls.MaximumSize = new Size(Math.Max(300, right.ClientSize.Width - 6), 0); };
+            controls.Controls.AddRange(new Control[] { tiktok, start, pause, push, interrupt, mute, letFinish, moderate, stop });
             right.Controls.Add(controls, 0, 1);
 
             var logPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = Theme.Field };
@@ -385,7 +395,8 @@ namespace DebateAI
                 GuardMs = (int)guard.Value, Fairness = fairness.Checked, TurnSeconds = (int)turnSeconds.Value, PauseMs = (int)pauseMs.Value,
                 BargeIn = barge.SelectedIndex == 1 ? BargeIn.Finish : barge.SelectedIndex == 2 ? BargeIn.Ignore : BargeIn.Stop,
                 BargeInMs = (int)bargeMs.Value, EchoGuard = echoGuard.Checked, ProactiveSeconds = (int)proactive.Value,
-                Memory = memory.Checked && transcribe.Checked, RoutingVerified = session.EchoCheckPassed == true
+                Memory = memory.Checked && transcribe.Checked, RoutingVerified = session.EchoCheckPassed == true || liveChecked,
+                CostLimit = (double)costLimit.Value
             };
         }
 
@@ -529,7 +540,7 @@ namespace DebateAI
             bool measuring = session.State == Phase.Meter;
             foreach (Control control in new Control[] { input, output, mode, threshold, guard, pauseMs, refresh, setup, offline, key, fairness,
                 turnSeconds, style, intensity, length, voice, language, personaName, topic, position, transcribe, wipe, patience, barge, echoGuard,
-                memory, bargeMs, proactive, wizard, profileBox, saveProfile, deleteProfile })
+                memory, bargeMs, proactive, wizard, profileBox, saveProfile, deleteProfile, costLimit, tiktok })
                 control.Enabled = ready;
             informed.Enabled = ready && !offline.Checked;
             start.Enabled = ready && hasInput && hasOutput && (offline.Checked || informed.Checked && LocalData.HasKey);
@@ -538,6 +549,8 @@ namespace DebateAI
             echoCheck.Enabled = ready && hasInput && hasOutput;
             mute.Enabled = !ready && session.State != Phase.Meter && session.State != Phase.Tone && session.State != Phase.EchoTest;
             mute.Text = session.Muted ? "NOVA spricht wieder" : "NOVA stumm";
+            letFinish.Enabled = !ready && session.State != Phase.Meter && session.State != Phase.Tone && session.State != Phase.EchoTest;
+            letFinish.Text = "Gast ausreden lassen: " + ((ready ? fairness.Checked : session.Fairness) ? "an" : "aus");
             tone.Enabled = hasOutput && (ready || measuring);
             push.Enabled = session.CanPush;
             push.Text = mode.SelectedIndex == 2 ? (session.State == Phase.Recording ? "Beitrag senden" : "Aufnahme starten") :
@@ -608,6 +621,15 @@ namespace DebateAI
         {
             double level = session.State == Phase.Speaking ? -25 + 10 * Math.Sin(Environment.TickCount / 90.0) : session.Level;
             orb.Level = session.Level;
+            long nowUi = uiClock.ElapsedMilliseconds;
+            if (session.Level >= (double)threshold.Value) lastInputActivity = nowUi;
+            bool running = !session.ReadyForStart && session.State != Phase.Meter && session.State != Phase.Tone && session.State != Phase.EchoTest;
+            bool inputActive = running && nowUi - lastInputActivity < 2000;
+            bool echoWarn = session.Metrics.EchoLoops > 0 || session.EchoCheckPassed == false;
+            string lampText = Lamp(inputActive, "Eingang") + "   " + Lamp(running && session.State == Phase.Speaking, "NOVA-Ausgang") + "   " +
+                Lamp(running && session.State != Phase.Connecting, "OpenAI") + "   " + Lamp(running && session.State == Phase.Recording, "Gast spricht") + "   " +
+                (echoWarn ? "▲ Echo-Warnung" : "○ kein Echo") + "   Kosten " + session.Metrics.CostText() + (session.CostLimitReached ? " · LIMIT" : "");
+            if (lamps.Text != lampText) lamps.Text = lampText;
             orb.Animate();
             wave.Push(session.State == Phase.Speaking || session.State == Phase.Listening || session.State == Phase.Recording ||
                 session.State == Phase.Meter ? level : -90);
@@ -678,7 +700,7 @@ namespace DebateAI
             values["name"] = personaName.Text; values["topic"] = topic.Text; values["position"] = position.Text;
             values["fairness"] = fairness.Checked; values["transcribe"] = transcribe.Checked;
             values["patience"] = patience.SelectedIndex; values["barge"] = barge.SelectedIndex; values["echoGuard"] = echoGuard.Checked;
-            values["memory"] = memory.Checked; values["bargeMs"] = (int)bargeMs.Value; values["proactive"] = (int)proactive.Value;
+            values["memory"] = memory.Checked; values["costLimit"] = (int)costLimit.Value; values["bargeMs"] = (int)bargeMs.Value; values["proactive"] = (int)proactive.Value;
             values["threshold"] = (int)threshold.Value; values["pause"] = (int)pauseMs.Value; values["guard"] = (int)guard.Value; values["turn"] = (int)turnSeconds.Value;
             var inDevice = input.SelectedItem as Device; var outDevice = output.SelectedItem as Device;
             values["input"] = inDevice == null ? "" : inDevice.Name; values["output"] = outDevice == null ? "" : outDevice.Name;
@@ -701,7 +723,7 @@ namespace DebateAI
             transcribe.Checked = LocalData.Flag(values, "transcribe", transcribe.Checked);
             Select(patience, values, "patience"); Select(barge, values, "barge");
             echoGuard.Checked = LocalData.Flag(values, "echoGuard", true); memory.Checked = LocalData.Flag(values, "memory", true);
-            Set(bargeMs, values, "bargeMs"); Set(proactive, values, "proactive");
+            Set(bargeMs, values, "bargeMs"); Set(proactive, values, "proactive"); Set(costLimit, values, "costLimit");
             Set(threshold, values, "threshold"); Set(pauseMs, values, "pause"); Set(guard, values, "guard"); Set(turnSeconds, values, "turn");
             savedInput = LocalData.Text(values, "input", ""); savedOutput = LocalData.Text(values, "output", "");
         }
@@ -779,7 +801,7 @@ namespace DebateAI
         {
             var button = new Button
             {
-                Text = text, AutoSize = true, MinimumSize = new Size(150, 46), FlatStyle = FlatStyle.Flat, BackColor = Theme.Field,
+                Text = text, AutoSize = true, MinimumSize = new Size(140, 44), FlatStyle = FlatStyle.Flat, BackColor = Theme.Field,
                 ForeColor = accent, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold), Margin = new Padding(0, 0, 8, 8)
             };
             button.FlatAppearance.BorderColor = accent;

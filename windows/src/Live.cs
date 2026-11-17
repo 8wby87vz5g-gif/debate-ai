@@ -165,9 +165,25 @@ namespace DebateAI
         public readonly List<int> FirstAudio = new List<int>();  // answer requested → first audio received
         public int Turns, Answers, BargeIns, Interrupts, Requeues, EchoFrames, EchoLoops, Reconnects, Failures, Proactive, Memory;
         public DateTime Started = DateTime.Now;
+        public double Cost;
+        public long AudioTokens, TextTokens;
+
+        public void AddUsage(TokenUsage usage)
+        {
+            if (usage == null) return;
+            Cost += usage.Cost;
+            AudioTokens += usage.AudioIn + usage.AudioOut;
+            TextTokens += usage.TextIn + usage.TextOut;
+        }
+
+        public string CostText()
+        {
+            return "≈ " + Cost.ToString("0.00", CultureInfo.InvariantCulture) + " $ (" + (AudioTokens + TextTokens) + " Tokens, ohne Mitschrift)";
+        }
 
         public void Reset()
         {
+            Cost = 0; AudioTokens = TextTokens = 0;
             Latency.Clear(); FirstAudio.Clear();
             Turns = Answers = BargeIns = Interrupts = Requeues = EchoFrames = EchoLoops = Reconnects = Failures = Proactive = Memory = 0;
             Started = DateTime.Now;
@@ -223,6 +239,7 @@ namespace DebateAI
             text.AppendLine("| Gedächtnis-Aktualisierungen | " + Memory + " |");
             text.AppendLine("| Verbindungs-Erneuerungen | " + Reconnects + " |");
             text.AppendLine("| Fehlgeschlagene Antworten | " + Failures + " |");
+            text.AppendLine("| Geschätzte OpenAI-Kosten (Realtime, ohne Mitschrift) | " + CostText() + " |");
             text.AppendLine();
             text.AppendLine("Einzelwerte Latenz (ms): " + (Latency.Count == 0 ? "—" : string.Join(", ", Latency)));
             text.AppendLine();

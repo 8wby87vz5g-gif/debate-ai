@@ -118,6 +118,7 @@ namespace DebateAI
         public int ProactiveSeconds;         // 0 = off; NOVA moves the debate on after this much silence
         public bool Memory = true;           // debate log for long debates (needs transcription)
         public bool RoutingVerified;         // echo check passed: full duplex from the first word
+        public double CostLimit;             // USD per debate; 0 = no limit. Reaching it mutes NOVA.
     }
 
     // Live debate control. All state and device access belongs to the WinForms thread.
@@ -180,6 +181,15 @@ namespace DebateAI
             }
         }
         public bool CanInterrupt { get { return State == Phase.Speaking || State == Phase.Thinking || State == Phase.WaitingForQuiet; } }
+        // "Gast ausreden lassen" can be switched during a running debate.
+        public bool Fairness
+        {
+            get { return options.Fairness; }
+            set { options.Fairness = value; Log(value ? "Gast ausreden lassen: an" : "Gast ausreden lassen: aus"); Changed(); }
+        }
+
+        public bool CostLimitReached { get; private set; }
+
         public bool Muted
         {
             get { return muted; }
@@ -223,6 +233,8 @@ namespace DebateAI
             echo = new EchoGuard();
             Metrics.Reset();
             factory = create;
+            CostLimitReached = false;
+            muted = false;
             ResetConversation();
             Memory = "";
             recentLines.Clear(); newLines.Clear();
@@ -460,6 +472,7 @@ namespace DebateAI
                         Log("Debattenprotokoll aktualisiert (" + Memory.Length + " Zeichen)");
                         break;
                     case LiveKind.Warning: Log("OpenAI-Hinweis: " + item.Text); break;
+                    case LiveKind.Usage: CountCost(item.Tokens); break;
                     case LiveKind.Closed: await Reconnect(now, "Verbindung beendet"); return;
                     case LiveKind.Fatal: Fail(item.Error); return;
                 }
@@ -565,6 +578,7 @@ namespace DebateAI
             answerActive = false;
             answerDone = true;
             if (item.Usage != null) Log(item.Usage);
+            CountCost(item.Tokens);
             if (dropped) { dropped = false; return; }
             if (item.Completed) { failures = 0; answersSinceMemory++; return; }
             if (sink != null && sink.TotalBytes > 0) return;
@@ -572,6 +586,20 @@ namespace DebateAI
             failures++;
             Log("Antwort ohne Audio beendet: " + item.Text);
             if (failures >= 3) Fail(new AppError("OpenAI liefert wiederholt keine Antworten. Verbindung und API-Projekt prüfen und neu starten."));
+        }
+
+        private void CountCost(TokenUsage tokens)
+        {
+            Metrics.AddUsage(tokens);
+            if (options.CostLimit > 0 && Metrics.Cost >= options.CostLimit && !CostLimitReached)
+            {
+                CostLimitReached = true;
+                muted = true;
+                Log("Kostenlimit erreicht: " + Metrics.CostText());
+                Note = "Kostenlimit von " + options.CostLimit.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) +
+                    " $ erreicht. NOVA ist stummgeschaltet und hört nur noch zu.";
+                Changed();
+            }
         }
 
         private void DrainInput(long now)

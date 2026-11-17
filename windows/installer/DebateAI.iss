@@ -3,7 +3,7 @@
 ; Build: ISCC.exe /DAppVersion=0.4.0 DebateAI.iss  (aus diesem Ordner, nach Neu-bauen.cmd)
 
 #ifndef AppVersion
-  #define AppVersion "0.4.1"
+  #define AppVersion "0.5.0"
 #endif
 
 [Setup]

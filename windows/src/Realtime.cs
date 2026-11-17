@@ -50,7 +50,23 @@ namespace DebateAI
         }
     }
 
-    internal enum LiveKind { SpeechStarted, SpeechStopped, Committed, AnswerStarted, AnswerDone, Line, Memory, Warning, Closed, Fatal }
+    internal enum LiveKind { SpeechStarted, SpeechStopped, Committed, AnswerStarted, AnswerDone, Line, Memory, Warning, Closed, Fatal, Usage }
+
+    // Token usage of one response, as reported by OpenAI in response.done.
+    internal sealed class TokenUsage
+    {
+        public int AudioIn, AudioCached, AudioOut, TextIn, TextCached, TextOut;
+
+        // Estimated USD for gpt-realtime-2.1-mini (per 1M tokens: audio 10 / 0.30 cached / 20, text 0.60 / 0.06 cached / 2.40).
+        public double Cost
+        {
+            get
+            {
+                return (Math.Max(0, AudioIn - AudioCached) * 10.0 + AudioCached * 0.30 + AudioOut * 20.0 +
+                        Math.Max(0, TextIn - TextCached) * 0.60 + TextCached * 0.06 + TextOut * 2.40) / 1000000.0;
+            }
+        }
+    }
 
     internal sealed class LiveEvent
     {
@@ -58,6 +74,7 @@ namespace DebateAI
         public string Speaker, Text, Usage;
         public bool Completed;
         public Exception Error;
+        public TokenUsage Tokens;
 
         public LiveEvent(LiveKind kind) { Kind = kind; }
         public override string ToString() { return Kind.ToString(); }
@@ -456,9 +473,14 @@ namespace DebateAI
                     var response = Child(message, "response");
                     string id = Field(response, "id"), status = Field(response, "status");
                     bool answer, cut;
+                    TokenUsage tokens = Tokens(Child(response, "usage"));
                     lock (gate)
                     {
-                        if (memoryResponses.Remove(id)) break;
+                        if (memoryResponses.Remove(id))
+                        {
+                            if (tokens != null) events.Enqueue(new LiveEvent(LiveKind.Usage) { Tokens = tokens });
+                            break;
+                        }
                         answer = id == answerId;
                         if (!answer) break;
                         active = false; answerId = null; answerSink = null;
@@ -468,7 +490,8 @@ namespace DebateAI
                     if (cut) ApplyCut();
                     events.Enqueue(new LiveEvent(LiveKind.AnswerDone)
                     {
-                        Completed = !cut && (status == "completed" || status == "incomplete"), Text = status, Usage = FormatUsage(Child(response, "usage"))
+                        Completed = !cut && (status == "completed" || status == "incomplete"), Text = status, Usage = FormatUsage(Child(response, "usage")),
+                        Tokens = tokens
                     });
                     break;
                 }
@@ -500,6 +523,19 @@ namespace DebateAI
                         return transcript;
                 }
             }
+        }
+
+        internal static TokenUsage Tokens(Dictionary<string, object> usage)
+        {
+            var input = Child(usage, "input_token_details");
+            var output = Child(usage, "output_token_details");
+            var cached = Child(input, "cached_tokens_details");
+            if (input == null || output == null) return null;
+            return new TokenUsage
+            {
+                AudioIn = Count(input, "audio_tokens"), AudioCached = Count(cached, "audio_tokens"), AudioOut = Count(output, "audio_tokens"),
+                TextIn = Count(input, "text_tokens"), TextCached = Count(cached, "text_tokens"), TextOut = Count(output, "text_tokens")
+            };
         }
 
         internal static string FormatUsage(Dictionary<string, object> usage)

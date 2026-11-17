@@ -1,57 +1,51 @@
-# NOVA live auf TikTok: Audio-Pipeline einrichten
-
-Ziel: Ein echter Mensch im TikTok-LIVE spricht, NOVA hört zu, antwortet selbstständig, und der Mensch sowie das Publikum hören NOVA über den Stream.
+# NOVA live auf TikTok: Einrichtung mit „TikTok LIVE verbinden“ (ab 0.5.0)
 
 ```text
-TikTok-Gast ──► LIVE Studio (Wiedergabe) ──► Voicemeeter VAIO ──► Bus B2 ──► DEBATE AI (Eingang)
-                                                                               │
-                                       OpenAI Realtime (Erkennung, Debatte, Stimme)
-                                                                               │
-TikTok-Gast ◄── LIVE-Stream ◄── LIVE Studio (Mikrofon = B1) ◄── Bus B1 ◄── Voicemeeter AUX ◄── DEBATE AI (Ausgang)
+TikTok-Gast → LIVE Studio (Ausgabe: Voicemeeter Input) → Banana VAIO → A1 (Kopfhörer) + B2 → DEBATE AI → OpenAI Realtime
+TikTok-Gast ← LIVE-Stream ← LIVE Studio (Mikrofon: Voicemeeter Out B1) ← B1 ← Banana AUX ← DEBATE AI (NOVA)
+                                                   Dein Mikrofon (Hardware-Eingang 1) → B1
 ```
 
-**Grundregel für Vollduplex:** NOVAs Ausgabe darf **nie** am Eingang von DEBATE AI ankommen. Dann kann NOVA zuhören, während sie spricht, und sich unterbrechen lassen. Den Rückweg über das Telefon des Gastes übernimmt dessen eingebaute Echounterdrückung.
+**DEBATE AI verbindet sich nicht selbst mit TikTok.** Es nutzt die Windows-Audiogeräte, aus denen LIVE Studio aufnimmt und auf die es ausgibt. Die App zeigt deshalb nie „mit TikTok verbunden“ an, sondern prüft jedes Glied der Audiokette auf deinem PC.
 
-## 1. Voicemeeter Banana
+## Einmalig vorbereiten
 
-| Kanal in Voicemeeter | Gerät, das dort abspielt | A1 (Kopfhörer) | B1 (zu LIVE Studio) | B2 (zu DEBATE AI) |
-|---|---|---|---|---|
-| Voicemeeter Input (VAIO) | TikTok LIVE Studio (Gast-Ton) | an | **aus** | **an** |
-| Voicemeeter AUX Input | DEBATE AI (NOVA) | an | **an** | **aus** |
-| Hardware-Eingang 1 | dein Mikrofon (falls du mitredest) | aus | an | an (nur wenn NOVA dich auch hören soll) |
+1. **Voicemeeter Banana** von [vb-audio.com](https://vb-audio.com/Voicemeeter/banana.htm) installieren (ersetzt Voicemeeter Standard) und **Windows neu starten**.
+2. Voicemeeter Banana starten.
+3. In **TikTok LIVE Studio**, Einstellungen → Audio:
+   - **Mikrofon:** `Voicemeeter Out B1` (genau eine Mikrofonquelle, kein zusätzliches Desktop-Audio).
+   - **Lautsprecher / Audiogerät:** `Voicemeeter Input`.
 
-1. In LIVE Studio unter Einstellungen → Audio den **Lautsprecher/Ausgang** auf `Voicemeeter Input` stellen. Falls LIVE Studio keine Ausgabeauswahl hat: Windows → System → Sound → Lautstärkemixer → LIVE Studio → Ausgabegerät `Voicemeeter Input`.
-2. In LIVE Studio als **Mikrofon** `Voicemeeter Out B1` wählen (genau einmal). Kein zusätzliches „Desktop-Audio“, sonst hört der Gast sich selbst.
-3. In DEBATE AI: **Voicemeeter finden** (wählt B2 als Eingang und AUX als Ausgang) oder von Hand wählen.
+## In DEBATE AI: „TikTok LIVE verbinden“
 
-## 2. Prüfen, bevor du live gehst
+| Schritt | Was passiert | Wer |
+|---|---|---|
+| 1 · Voicemeeter Banana | Erkennt Installation und Typ (Standard reicht nicht), startet Banana auf Knopfdruck | automatisch |
+| 2 · Routing in Voicemeeter | Stellt über die offizielle Voicemeeter-Fernsteuerung ein: Gast-Ton (VAIO) → A1 + B2, nicht B1 · NOVA (AUX) → B1 (+ A1 zum Mithören), nicht B2 · dein Mikrofon → B1 · A1 = Borofone-Kopfhörer · Hardware-Eingang 1 = Mikrofonarray. Zeigt vorher alle Änderungen, ändert nur diese Schalter und liest sie zurück | automatisch nach deiner Bestätigung |
+| 3 · DEBATE-AI-Geräte | Eingang `Voicemeeter Out B2`, Ausgang `Voicemeeter AUX Input` | automatisch |
+| 4 · Routing-Messung | Spielt Testsignale auf den Gast-Weg und den NOVA-Weg und misst, ob sie genau auf B2 bzw. B1 ankommen und nicht zurücklaufen | automatisch (du hörst Testsignale) |
+| 5 · OpenAI | Öffnet eine Realtime-Sitzung und misst die Aufbauzeit | automatisch |
+| 6 · LIVE Studio | Erkennt, ob LIVE Studio läuft; Mikrofon- und Ausgabewahl bestätigst du | du |
+| 7 · Gastton | 15 s lang: Gast spricht oder Ton läuft in LIVE Studio → Pegel an VAIO (über Voicemeeter) und B2 (DEBATE AI) | du lässt Ton laufen, Messung automatisch |
+| 8 · NOVA | Zeigt Persönlichkeit, Position und Kostenlimit | Anzeige |
+| 9 · Einwilligung | Gäste informiert, KI-Hinweis im Stream eingeblendet | du |
 
-1. **Echoprüfung** in DEBATE AI. Erwartet: „Kein Echo“. Dann sind Vollduplex und Unterbrechungen vom ersten Wort an aktiv.
-2. Bei „Echo erkannt“: Bus-Schalter oben prüfen. Bis das behoben ist, unter „Wenn der Gast unterbricht“ **Ignorieren (Halbduplex)** wählen.
-3. **Pegel prüfen** mit einem Testgast oder einem Video auf `Voicemeeter Input`: Pegel reagiert, B1 bleibt still.
-4. **Testton**: B1 und die LIVE-Studio-Mikrofonanzeige reagieren, der DEBATE-AI-Pegel bleibt unten.
+**Startfreigabe** gibt es erst, wenn 3, 4, 5, 6, 7 und 9 bestanden sind. Dann startet „Live-Debatte starten“ NOVA mit dem TikTok-Profil (OpenAI-Satzende, Geduld ausgewogen, kurze Antworten, NOVA stoppt bei Unterbrechung, Vollduplex ab dem ersten Wort, weil die Messung kein Echo gezeigt hat).
 
-## 3. Empfohlene Einstellungen für TikTok LIVE
+## Wenn LIVE Studio den Gast nicht getrennt ausgibt
 
-| Einstellung | Wert |
-|---|---|
-| Sprecherwechsel | Automatisch · OpenAI erkennt das Satzende |
-| Geduld beim Satzende | Geduldig (lässt Denkpausen zu) |
-| Wenn der Gast unterbricht | NOVA stoppt sofort (lebendig) oder NOVA beendet ihren Satz (ruhiger) |
-| Gesprächspartner ausreden lassen | an |
-| Echo-Schutz | an |
-| Live-Mitschrift, Debattengedächtnis | an |
-| Nachfrage nach s | 8–12 (NOVA belebt Pausen), 0 für reine Duelle |
-| Antwortlänge | Kurz oder Mittel (Live wirkt kurz und schlagfertig besser) |
+Der Gastton-Test (Schritt 7) zeigt das ehrlich: Kommt bei VAIO nichts an oder hörst du dort auch dich selbst und den Stream, gibt LIVE Studio den Gast nicht getrennt aus. **Unterstützte Alternative:** Den Gast über eine Anruf-App (z. B. Discord, Zoom) zuschalten, deren **Lautsprecher** `Voicemeeter Input` und deren **Mikrofon** `Voicemeeter Out B1` ist. In LIVE Studio bleibt `Voicemeeter Out B1` das Mikrofon; damit das Publikum den Gast hört, in LIVE Studio zusätzlich `Voicemeeter Out B2` als zweite Audioquelle hinzufügen. In Schritt 6 „Stattdessen: Gast über eine Anruf-App“ ankreuzen.
 
-## 4. Kennzeichnung
+## Während der Live-Debatte
+
+Die Kontrollzeile im Hauptfenster zeigt: ● Eingang (Gastton kommt an) · ● NOVA-Ausgang · ● OpenAI · ● Gast spricht · Echo-Warnung · geschätzte Kosten. Darüber: Latenz der letzten Antwort, Durchschnitt und p95.
+
+Knöpfe: Debatte starten · Pause · NOVA soll sprechen / Jetzt antworten · NOVA unterbrechen · NOVA stumm · **Gast ausreden lassen** (an/aus, wirkt sofort) · Ruhe in der Debatte · **Not-Aus (Esc)**.
+
+**Kostenlimit:** Standard 5 $ pro Debatte. Ist es erreicht, schaltet sich NOVA stumm und hört nur noch zu.
+
+## Kennzeichnung und Einwilligung
 
 - NOVA sagt beim Start hörbar, dass sie eine KI ist.
 - Blende im Stream dauerhaft „NOVA · KI-Debattenpartnerin · synthetische Stimme“ ein und nutze die KI-Kennzeichnung von TikTok, falls angeboten.
-- Informiere Gäste vor dem Zuschalten, dass ihre Beiträge zur Verarbeitung an OpenAI gehen.
-
-## 5. Andere Programme
-
-- **OBS Studio:** wie LIVE Studio: Mikrofon/Aux-Quelle = `Voicemeeter Out B1`, Gast-Anruf-App gibt auf `Voicemeeter Input` aus.
-- **Discord:** Discord-Ausgabegerät `Voicemeeter Input`, Discord-Eingabegerät `Voicemeeter Out B1`. Discords Echounterdrückung für dieses Profil ausschalten (das Routing ist bereits getrennt).
-- **Lokal am Tisch:** Mikrofon als Eingang, Kopfhörer als Ausgang. Lautsprecher nur mit Halbduplex.
+- Informiere Gäste vor dem Zuschalten, dass ihre Beiträge an OpenAI gehen. DEBATE AI zeichnet keine Gespräche auf; die Mitschrift bleibt im Arbeitsspeicher.

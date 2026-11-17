@@ -1,0 +1,335 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace DebateAI
+{
+    // "TikTok LIVE verbinden": checks every link of the audio chain on this PC and only then
+    // releases the live debate. DEBATE AI never connects to TikTok itself; it uses the audio
+    // devices that TikTok LIVE Studio records from and plays to.
+    internal sealed partial class MainForm
+    {
+        private sealed class CheckRow
+        {
+            public Label Mark, Title, Detail;
+            public bool Ok;
+
+            public void Show(bool? ok, string detail)
+            {
+                Ok = ok == true;
+                Mark.Text = ok == true ? "✓" : ok == false ? "✗" : "…";
+                Mark.ForeColor = ok == true ? Theme.Green : ok == false ? Theme.Red : Theme.Amber;
+                Detail.Text = detail;
+            }
+        }
+
+        private void ShowLiveConnect()
+        {
+            if (!session.ReadyForStart) { MessageBox.Show(this, "Bitte zuerst die laufende Debatte beenden.", "TikTok LIVE"); return; }
+            if (offline.Checked || !LocalData.HasKey)
+            {
+                MessageBox.Show(this, "Für TikTok LIVE wird der OpenAI-API-Schlüssel benötigt. Bitte zuerst „API-Schlüssel hinterlegen“ und die Offline-Probe ausschalten.", "TikTok LIVE");
+                return;
+            }
+            RefreshDevices();
+            bool startNow = false;
+            IVoicemeeter vm = null;
+            VoicemeeterLayout layout = null;
+            var clock = Stopwatch.StartNew();
+            using (var dialog = new Form
+            {
+                Text = "DEBATE AI · TikTok LIVE verbinden", StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(820, 720),
+                FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false, Font = Font,
+                BackColor = Theme.Background, ForeColor = Theme.Text
+            })
+            {
+                var list = new FlowLayoutPanel { Location = new Point(16, 16), Size = new Size(788, 600), FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
+                var verdict = new Label { Location = new Point(16, 628), AutoSize = true, MaximumSize = new Size(560, 0), Font = new Font("Segoe UI", 11, FontStyle.Bold) };
+                Button go = Big("Live-Debatte starten", Theme.Green), all = Big("Alles prüfen", Theme.Cyan), close = Button("Schließen");
+                go.Location = new Point(600, 660); all.Location = new Point(430, 660); close.Location = new Point(16, 672);
+                go.Enabled = false;
+                dialog.Controls.AddRange(new Control[] { list, verdict, go, all, close });
+
+                Func<string, Control[], CheckRow> row = (title, actions) =>
+                {
+                    var panel = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Width = 760, BackColor = Theme.Panel, Margin = new Padding(0, 0, 0, 8), Padding = new Padding(8) };
+                    panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
+                    panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 710));
+                    var item = new CheckRow
+                    {
+                        Mark = new Label { AutoSize = true, Font = new Font("Segoe UI", 14, FontStyle.Bold), Text = "·", ForeColor = Theme.Muted },
+                        Title = new Label { AutoSize = true, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold), ForeColor = Theme.Cyan, Text = title },
+                        Detail = new Label { AutoSize = true, MaximumSize = new Size(700, 0), ForeColor = Theme.Muted, Text = "Noch nicht geprüft." }
+                    };
+                    var body = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Width = 700 };
+                    body.Controls.Add(item.Title); body.Controls.Add(item.Detail);
+                    if (actions != null && actions.Length != 0) body.Controls.Add(Row(actions));
+                    panel.Controls.Add(item.Mark, 0, 0); panel.Controls.Add(body, 1, 0);
+                    list.Controls.Add(panel);
+                    return item;
+                };
+
+                // 1 · Voicemeeter
+                Button launchVm = Button("Voicemeeter Banana starten"), downloadVm = Button("Download-Seite öffnen");
+                launchVm.Visible = downloadVm.Visible = false;
+                CheckRow vmRow = row("1 · Voicemeeter Banana", new Control[] { launchVm, downloadVm });
+
+                // 2 · Routing in Voicemeeter
+                ComboBox phones = Combo(), mic = Combo();
+                phones.Width = mic.Width = 300;
+                var monitor = new CheckBox { Text = "NOVA im Kopfhörer mithören", AutoSize = true, Checked = true, ForeColor = Theme.Text };
+                var hearsHost = new CheckBox { Text = "NOVA hört auch mich", AutoSize = true, ForeColor = Theme.Text };
+                Button applyRouting = Button("Routing einrichten");
+                CheckRow routeRow = row("2 · Routing in Voicemeeter (Gast → A1 + B2, NOVA → B1, Mikrofon → B1)",
+                    new Control[] { Caption("A1"), phones, Caption("Mikrofon"), mic });
+                ((FlowLayoutPanel)routeRow.Detail.Parent).Controls.Add(Row(monitor, hearsHost, applyRouting));
+
+                // 3 · Devices in DEBATE AI
+                CheckRow deviceRow = row("3 · DEBATE-AI-Geräte (Eingang B2, Ausgang AUX)", null);
+
+                // 4 · Routing measurement
+                Button measure = Button("Routing messen (ca. 10 s, du hörst Testsignale)");
+                CheckRow measureRow = row("4 · Messung: Gast → B2, NOVA → B1, kein Rückweg (Tests 2, 3, 5)", new Control[] { measure });
+
+                // 5 · OpenAI
+                Button openAi = Button("Verbindung prüfen");
+                CheckRow openAiRow = row("5 · OpenAI Realtime", new Control[] { openAi });
+
+                // 6 · LIVE Studio
+                var liveMic = new CheckBox { Text = "In LIVE Studio ist „Voicemeeter Out B1“ als Mikrofon gewählt (genau einmal).", AutoSize = true, ForeColor = Theme.Text };
+                var liveOut = new CheckBox { Text = "LIVE Studio gibt den Ton auf „Voicemeeter Input“ aus (Lautsprecher/Audiogerät).", AutoSize = true, ForeColor = Theme.Text };
+                var altGuest = new CheckBox { Text = "Stattdessen: Gast über eine Anruf-App, deren Ausgabe „Voicemeeter Input“ ist.", AutoSize = true, ForeColor = Theme.Text };
+                CheckRow studioRow = row("6 · TikTok LIVE Studio (von dir zu bestätigen)", null);
+                var studioBody = (FlowLayoutPanel)studioRow.Detail.Parent;
+                studioBody.Controls.Add(liveMic); studioBody.Controls.Add(liveOut); studioBody.Controls.Add(altGuest);
+
+                // 7 · Guest audio
+                Button guestTest = Button("Gastton prüfen (15 s)");
+                CheckRow guestRow = row("7 · Gastton kommt an (Tests 1, 2): Gast sprechen lassen oder Ton in LIVE Studio abspielen", new Control[] { guestTest });
+
+                // 8 · NOVA and costs
+                CheckRow novaRow = row("8 · NOVA-Persönlichkeit und Kostenlimit", null);
+
+                // 9 · Consent
+                var consentLive = Wide("Alle Gäste wissen, dass NOVA eine KI ist und ihre Beiträge an OpenAI gehen. Der Hinweis „NOVA · KI“ ist im Stream eingeblendet.");
+                consentLive.Width = 700;
+                CheckRow consentRow = row("9 · Einwilligung und KI-Kennzeichnung", null);
+                ((FlowLayoutPanel)consentRow.Detail.Parent).Controls.Add(consentLive);
+                consentRow.Detail.Text = "NOVA sagt beim Start hörbar, dass sie eine KI ist.";
+
+                Func<string, Device> findInput = hint => FindNamed(input, hint, null);
+                Func<string, string, Device> findOutput = (hint, avoid) => FindNamed(output, hint, avoid);
+
+                Action update = () =>
+                {
+                    novaRow.Show(true, "NOVA: " + personaName.Text + " · " + style.Text + " · " + length.Text +
+                        (position.Text.Trim().Length != 0 ? " · Position: " + position.Text.Trim() : "") +
+                        " · Kostenlimit: " + (costLimit.Value == 0 ? "keins (nicht empfohlen)" : costLimit.Value + " $ pro Debatte"));
+                    bool studio = (liveMic.Checked && liveOut.Checked) || (liveMic.Checked && altGuest.Checked);
+                    studioRow.Show(studio ? (bool?)true : null, (LiveStudio.Running() ? "TikTok LIVE Studio läuft. " : "TikTok LIVE Studio wurde nicht gefunden (bitte starten). ") +
+                        "DEBATE AI verbindet sich nicht selbst mit TikTok; es nutzt die Audiogeräte, die LIVE Studio verwendet.");
+                    consentRow.Ok = consentLive.Checked;
+                    consentRow.Mark.Text = consentLive.Checked ? "✓" : "·";
+                    consentRow.Mark.ForeColor = consentLive.Checked ? Theme.Green : Theme.Muted;
+                    bool ready = deviceRow.Ok && measureRow.Ok && openAiRow.Ok && studioRow.Ok && guestRow.Ok && consentRow.Ok;
+                    go.Enabled = ready;
+                    var missing = new List<string>();
+                    if (!deviceRow.Ok) missing.Add("3"); if (!measureRow.Ok) missing.Add("4"); if (!openAiRow.Ok) missing.Add("5");
+                    if (!studioRow.Ok) missing.Add("6"); if (!guestRow.Ok) missing.Add("7"); if (!consentRow.Ok) missing.Add("9");
+                    verdict.Text = ready ? "Startfreigabe erteilt: Die Audiokette auf diesem PC ist geprüft." : "Noch keine Startfreigabe. Offen: " + string.Join(", ", missing);
+                    verdict.ForeColor = ready ? Theme.Green : Theme.Amber;
+                };
+                foreach (CheckBox box in new[] { liveMic, liveOut, altGuest, consentLive }) box.CheckedChanged += delegate { update(); };
+
+                Action checkVoicemeeter = () =>
+                {
+                    if (vm != null) { vm.Dispose(); vm = null; }
+                    launchVm.Visible = downloadVm.Visible = false;
+                    try
+                    {
+                        var remote = new VoicemeeterRemote();
+                        vm = remote;
+                        int kind = remote.Kind;
+                        layout = VoicemeeterLayout.For(kind);
+                        if (kind == 0) { vmRow.Show(false, "Voicemeeter ist installiert, läuft aber nicht."); launchVm.Visible = true; }
+                        else if (layout == null) { vmRow.Show(false, "Es läuft Voicemeeter Standard. Für getrennte Wege (B1 und B2) wird Voicemeeter Banana benötigt."); downloadVm.Visible = true; }
+                        else
+                        {
+                            vmRow.Show(true, layout.Name + " läuft (" + remote.Folder + ").");
+                            phones.Items.Clear(); mic.Items.Clear();
+                            List<string> outs = vm.OutputDevices(), ins = vm.InputDevices();
+                            foreach (string name in outs) phones.Items.Add(name);
+                            foreach (string name in ins) mic.Items.Add(name);
+                            phones.SelectedItem = VoicemeeterSetup.Pick(outs, "Borofone", "Kopfhörer", "Headphone", "Headset");
+                            mic.SelectedItem = VoicemeeterSetup.Pick(ins, "Intel", "Mikrofonarray", "Microphone Array", "Mikrofon", "Microphone");
+                        }
+                    }
+                    catch (AppError error) { vmRow.Show(false, error.Message); downloadVm.Visible = true; }
+                    catch (Exception) { vmRow.Show(false, "Voicemeeter konnte nicht angesprochen werden."); }
+                };
+
+                Action assignDevices = () =>
+                {
+                    RefreshDevices();
+                    Device b2 = findInput("Voicemeeter Out B2") ?? findInput("Voicemeeter AUX Output");
+                    Device aux = findOutput("Voicemeeter AUX Input", null) ?? findOutput("Voicemeeter AUX In", null);
+                    if (b2 != null) input.SelectedItem = b2;
+                    if (aux != null) output.SelectedItem = aux;
+                    deviceRow.Show(b2 != null && aux != null, b2 != null && aux != null ? "Eingang: " + b2.Name + " · Ausgang: " + aux.Name :
+                        "Nicht gefunden: " + (b2 == null ? "„Voicemeeter Out B2“ " : "") + (aux == null ? "„Voicemeeter AUX Input“" : "") +
+                        ". Voicemeeter Banana installieren, Windows neu starten und „Geräte neu laden“.");
+                };
+
+                Func<Task> runMeasure = async () =>
+                {
+                    Device b2 = findInput("Voicemeeter Out B2") ?? findInput("Voicemeeter AUX Output");
+                    Device b1 = findInput("Voicemeeter Out B1") ?? findInput("Voicemeeter Output");
+                    Device vaio = findOutput("Voicemeeter Input", "AUX");
+                    Device aux = findOutput("Voicemeeter AUX Input", null) ?? findOutput("Voicemeeter AUX In", null);
+                    if (b1 == null || b2 == null || vaio == null || aux == null)
+                    {
+                        measureRow.Show(false, "Für die Messung fehlen Voicemeeter-Geräte (B1, B2, Voicemeeter Input, Voicemeeter AUX Input).");
+                        return;
+                    }
+                    measure.Enabled = all.Enabled = false;
+                    measureRow.Show(null, "Messung läuft: Testsignal auf „Voicemeeter Input“ (Gast-Weg) …");
+                    try
+                    {
+                        Func<Device, Func<ICapture>> listen = d => () => new WaveCapture(WinAudio.Resolve(true, d));
+                        Func<int, Task> wait = ms => Task.Delay(ms);
+                        Func<long> now = () => clock.ElapsedMilliseconds;
+                        var results = new List<RouteResult>();
+                        results.AddRange(await RoutingMeasurement.Measure("Gast-Weg (Voicemeeter Input)", () => new WavePlayback(WinAudio.Resolve(false, vaio)),
+                            new[] { new Listener { Name = "B2 (DEBATE AI)", Open = listen(b2), Expected = true }, new Listener { Name = "B1 (Stream)", Open = listen(b1), Expected = false } }, now, wait));
+                        measureRow.Show(null, "Messung läuft: Testsignal auf „Voicemeeter AUX Input“ (NOVA-Weg) …");
+                        results.AddRange(await RoutingMeasurement.Measure("NOVA-Weg (Voicemeeter AUX Input)", () => new WavePlayback(WinAudio.Resolve(false, aux)),
+                            new[] { new Listener { Name = "B1 (Stream)", Open = listen(b1), Expected = true }, new Listener { Name = "B2 (DEBATE AI)", Open = listen(b2), Expected = false } }, now, wait));
+                        bool ok = results.TrueForAll(r => r.Ok);
+                        var lines = new List<string>();
+                        foreach (RouteResult result in results) { lines.Add(result.Describe()); LocalData.WriteLog("Routing-Messung: " + result.Describe()); }
+                        measureRow.Show(ok, string.Join("\n", lines) + (ok ? "" : "\nRouting korrigieren (Schritt 2) und erneut messen."));
+                    }
+                    catch (Exception error) { measureRow.Show(false, error is AppError ? error.Message : "Messung fehlgeschlagen: " + error.GetType().Name); }
+                    finally { measure.Enabled = all.Enabled = true; update(); }
+                };
+
+                Func<Task> runOpenAi = async () =>
+                {
+                    openAi.Enabled = false;
+                    openAiRow.Show(null, "Verbinde …");
+                    var started = Stopwatch.StartNew();
+                    try
+                    {
+                        using (var probe = new RealtimeDebater(new WebSocketWire(LocalData.LoadKey()), new LiveOptions { Persona = CurrentPersona(), Transcribe = true, ServerTurns = true, Patience = patience.SelectedIndex }))
+                            await probe.Start(false, System.Threading.CancellationToken.None);
+                        openAiRow.Show(true, "Sitzung mit " + RealtimeDebater.Model + " geöffnet und konfiguriert in " + started.ElapsedMilliseconds + " ms.");
+                    }
+                    catch (Exception error) { openAiRow.Show(false, error is AppError ? error.Message : "Keine Verbindung zu OpenAI: " + error.GetType().Name); }
+                    finally { openAi.Enabled = true; update(); }
+                };
+
+                launchVm.Click += async delegate
+                {
+                    var remote = vm as VoicemeeterRemote;
+                    if (remote == null || !remote.Launch(2)) { vmRow.Show(false, "Voicemeeter Banana konnte nicht gestartet werden. Bitte von Hand starten."); return; }
+                    vmRow.Show(null, "Voicemeeter Banana wird gestartet …");
+                    await Task.Delay(3000);
+                    checkVoicemeeter(); update();
+                };
+                downloadVm.Click += delegate
+                {
+                    try { Process.Start(new ProcessStartInfo { FileName = "https://vb-audio.com/Voicemeeter/banana.htm", UseShellExecute = true }); } catch (Exception) { }
+                    MessageBox.Show(dialog, "Nach der Installation von Voicemeeter Banana muss Windows neu gestartet werden. Danach DEBATE AI öffnen und erneut „TikTok LIVE verbinden“.", "Voicemeeter Banana");
+                };
+                applyRouting.Click += delegate
+                {
+                    if (vm == null || layout == null) { routeRow.Show(false, "Voicemeeter Banana muss laufen (Schritt 1)."); return; }
+                    List<RoutingStep> plan = layout.Plan(phones.SelectedItem as string, mic.SelectedItem as string, monitor.Checked, hearsHost.Checked);
+                    var preview = new List<string>();
+                    foreach (RoutingStep step in plan) preview.Add("• " + step.Description);
+                    if (MessageBox.Show(dialog, "DEBATE AI stellt in Voicemeeter ein:\n\n" + string.Join("\n", preview) +
+                        "\n\nAndere Kanäle bleiben unverändert. Fortfahren?", "Routing einrichten", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                    try
+                    {
+                        VoicemeeterSetup.Apply(vm, plan);
+                        System.Threading.Thread.Sleep(300);
+                        List<string> wrong = VoicemeeterSetup.Verify(vm, plan);
+                        foreach (RoutingStep step in plan) LocalData.WriteLog("Voicemeeter: " + step.Description);
+                        routeRow.Show(wrong.Count == 0, wrong.Count == 0 ? "Eingerichtet und zurückgelesen. Voicemeeter speichert die Einstellung beim Beenden automatisch." :
+                            "Nicht übernommen: " + string.Join("; ", wrong));
+                    }
+                    catch (Exception error) { routeRow.Show(false, error is AppError ? error.Message : "Voicemeeter hat die Einstellung abgelehnt."); }
+                    update();
+                };
+                measure.Click += async delegate { await runMeasure(); };
+                openAi.Click += async delegate { await runOpenAi(); };
+                guestTest.Click += async delegate
+                {
+                    Device b2 = findInput("Voicemeeter Out B2") ?? findInput("Voicemeeter AUX Output");
+                    if (b2 == null) { guestRow.Show(false, "„Voicemeeter Out B2“ nicht gefunden."); return; }
+                    guestTest.Enabled = false;
+                    var probe = new GuestProbe();
+                    try
+                    {
+                        using (var capture = new WaveCapture(WinAudio.Resolve(true, b2)))
+                        {
+                            var watch = Stopwatch.StartNew();
+                            while (watch.ElapsedMilliseconds < 15000 && !(probe.VaioOk && probe.InputOk))
+                            {
+                                await Task.Delay(100);
+                                double inputDb = -90;
+                                capture.Drain(frame => inputDb = Math.Max(inputDb, TurnDetector.Level(frame)));
+                                double vaioDb = vm != null && layout != null ? VoicemeeterSetup.Loudest(vm, 0, layout.GuestLevel) : inputDb;
+                                probe.Add(vaioDb, inputDb, 100);
+                                guestRow.Show(null, "Messe … VAIO " + (int)vaioDb + " dB · B2 " + (int)inputDb + " dBFS · " + (15 - watch.ElapsedMilliseconds / 1000) + " s");
+                            }
+                        }
+                        guestRow.Show(probe.VaioOk && probe.InputOk, probe.Describe());
+                        LocalData.WriteLog("Gastton-Test: " + probe.Describe());
+                    }
+                    catch (Exception error) { guestRow.Show(false, error is AppError ? error.Message : "Gastton-Test fehlgeschlagen."); }
+                    finally { guestTest.Enabled = true; update(); }
+                };
+                all.Click += async delegate
+                {
+                    checkVoicemeeter(); assignDevices(); update();
+                    await runOpenAi();
+                    if (deviceRow.Ok) await runMeasure();
+                    update();
+                };
+                close.Click += delegate { dialog.Close(); };
+                go.Click += delegate
+                {
+                    ApplyPreset(Setup.Presets[0], false);
+                    informed.Checked = true;
+                    liveChecked = true;
+                    startNow = true;
+                    dialog.Close();
+                };
+                dialog.Shown += delegate { checkVoicemeeter(); assignDevices(); update(); };
+                dialog.FormClosed += delegate { if (vm != null) vm.Dispose(); };
+                dialog.ShowDialog(this);
+            }
+            SaveSettings();
+            Render();
+            if (startNow) BeginInvoke(new Action(async () => await StartDebate()));
+        }
+
+        private bool liveChecked;
+
+        private static Device FindNamed(ComboBox box, string hint, string avoid)
+        {
+            foreach (object item in box.Items)
+            {
+                var device = item as Device;
+                if (device == null || device.Name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (avoid != null && device.Name.IndexOf(avoid, StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                return device;
+            }
+            return null;
+        }
+    }
+}

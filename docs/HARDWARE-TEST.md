@@ -1,46 +1,29 @@
-# DEBATE AI 0.4.0 · Live-Abnahme auf echter Hardware
+# DEBATE AI 0.5.0 · TikTok-Live-Abnahme
 
-Die Live-Funktion gilt erst als fertig, wenn Teil B mit einem echten Menschen bestanden und dokumentiert ist. Diese Tests sind **bisher nicht durchgeführt** (Stand 17.11.2026), weil die Entwicklungsumgebung weder Windows-Audio noch einen OpenAI-Schlüssel noch TikTok hat.
+Stand 17.11.2026: Lokale Debatten mit echter OpenAI-Verbindung funktionieren laut deinem Test (Reaktionszeit ca. 1–2 s). **Die TikTok-Kette ist noch nicht auf echter Hardware getestet.**
 
-**Vorbereitung:** Installer `DEBATE-AI-Setup-0.4.0.exe` oder `Neu-bauen.cmd` + `Selbsttest.cmd` (muss mit lauter `OK` enden). Routing nach `docs/LIVE-SETUP.md`, am einfachsten mit dem **Einrichtungsassistenten** (Szenario „TikTok LIVE Studio“).
+## Die 10 Tests und wer sie prüft
 
-## Teil A · Technische Vorprüfung (ca. 15 Minuten, ohne Gast)
-
-| Nr. | Test | Bestanden, wenn … | Ergebnis |
+| Nr. | Test | Wie geprüft | Art |
 |---|---|---|---|
-| A1 | App starten | Dunkles Fenster, Geräte in beiden Listen | |
-| A2 | Testton auf NOVAs Ausgang | Ton nur dort, wo er hin soll | |
-| A3 | **Echoprüfung** | „Kein Echo“ (bei getrenntem Routing) | |
-| A4 | API-Schlüssel, Einwilligung, Debatte starten | NOVA sagt hörbar, dass sie eine KI ist | |
-| A5 | Selbst einen Satz sagen, schweigen | NOVA antwortet **ohne Klick** | |
-| A6 | Mitten im Satz kurz nachdenken (1 s Pause), dann weiterreden | NOVA redet nicht in die Denkpause hinein | |
-| A7 | Während NOVA spricht, deutlich dazwischenreden | „NOVA stoppt sofort“: sie verstummt und hört zu; „beendet ihren Satz“: sie spricht zu Ende und antwortet dann | |
-| A8 | Nach NOVAs Antwort 20 s schweigen | Kein Selbstgespräch; mit „Nachfrage nach s“ = 10 genau **eine** Nachfrage | |
-| A9 | WLAN kurz trennen | Verständliche Meldung, Verbindung wird erneuert oder Neustart möglich | |
-| A10 | Falscher Schlüssel `sk-test-ungueltig-123456` | Meldung „API-Schlüssel abgelehnt“ | |
+| 1 | Gastton erreicht Voicemeeter VAIO | „TikTok LIVE verbinden“ → Schritt 7: Pegel am VAIO-Kanal über die Voicemeeter-Fernsteuerung | automatische Messung, du lieferst den Ton |
+| 2 | Gastton erreicht DEBATE AI über B2 | Schritt 4 (Testsignal auf Gast-Weg → B2) und Schritt 7 (echter Gastton an B2) | automatisch |
+| 3 | NOVAs Stimme erreicht B1 | Schritt 4 (Testsignal auf NOVA-Weg → B1) | automatisch |
+| 4 | LIVE Studio empfängt NOVAs Stimme | Schritt 3 der Assistenten-Stimmprobe bzw. Debatte: Mikrofonanzeige in LIVE Studio schlägt aus | **du** |
+| 5 | NOVAs Stimme gelangt nicht auf ihren Eingang | Schritt 4 (NOVA-Weg darf nicht auf B2 ankommen) + Echo-Schutz während der Debatte | automatisch |
+| 6 | Menschliche Sprache wird erkannt | Mitschrift „Gast: …“ während der Debatte | live, du |
+| 7 | NOVA antwortet automatisch | Debatte ohne Klick | live, du |
+| 8 | TikTok-Gast hört NOVA und kann antworten | Gast bestätigt | **live mit echtem Gast** |
+| 9 | Mindestens zehn Gesprächswechsel | Live-Testbericht: „Gesprochene NOVA-Antworten“ ≥ 10 | live, Bericht |
+| 10 | NOVA kann unterbrochen werden und hört weiter zu | Gast redet dazwischen; Bericht: „Unterbrechungen durch den Gast“ ≥ 1, danach weitere Antworten | live, Bericht |
 
-## Teil B · Pflichtabnahme mit echtem Menschen über TikTok LIVE (ca. 15 Minuten)
+## Ablauf (ca. 20 Minuten)
 
-Ablauf: Live gehen (oder Übungsmodus), einen eingeweihten Gast zuschalten, Thema vorgeben (z. B. „Sollte es ein Tempolimit auf Autobahnen geben?“), NOVAs Position einstellen. Nach dem Gespräch **Live-Testbericht speichern** klicken. Die Datei enthält automatisch gemessene Latenzen und Zählwerte sowie die Tabelle unten zum Ausfüllen.
+1. Voicemeeter Banana installieren, Windows neu starten, Banana starten, LIVE Studio einstellen (`docs/LIVE-SETUP.md`).
+2. DEBATE AI 0.5.0 → **TikTok LIVE verbinden** → **Alles prüfen** → bei Schritt 2 **Routing einrichten** → erneut **Routing messen**.
+3. In LIVE Studio Vorschau/Übungsmodus oder live mit eingeweihtem Gast: Schritt 7 **Gastton prüfen**.
+4. Schritt 6 und 9 bestätigen → **Live-Debatte starten**.
+5. Mindestens zehn Wechsel, einmal bewusst dazwischenreden, einmal provozieren.
+6. **Live-Testbericht speichern**, dazu `debate-ai.log` (Protokollordner).
 
-| Nr. | Anforderung | Wie prüfen |
-|---|---|---|
-| 1 | Ein echter Mensch spricht über einen getrennten Audioeingang | Gast über LIVE Studio → VAIO → B2 |
-| 2 | NOVA erkennt seine Aussage | Mitschrift „Gast: …“ stimmt inhaltlich |
-| 3 | NOVA antwortet selbstständig über den konfigurierten Ausgang | Kein Klick während des Gesprächs |
-| 4 | Der Mensch hört NOVA über die Streaming-Verbindung | Gast bestätigt es mündlich |
-| 5 | Mindestens zehn zusammenhängende Gesprächswechsel | Bericht: „Gesprochene NOVA-Antworten“ ≥ 10 |
-| 6 | NOVA erinnert sich und reagiert auf Gegenargumente | Gast bezieht sich auf etwas von vor 5+ Wechseln; NOVA greift es korrekt auf |
-| 7 | Keine störenden Echos oder Rückkopplungen | Bericht: Selbstgespräch-Schleifen = 0; Gast und Publikum hören nichts doppelt |
-| 8 | Antwortlatenz gemessen und dokumentiert | Bericht: Latenz Ø / Median / p95 |
-
-Zusätzlich empfohlen: Gast provoziert einmal bewusst („Du bist doch nur ein dummer Bot“). Erwartet: NOVA bleibt ruhig, sachlich, nicht beleidigend.
-
-Bitte den gespeicherten Bericht (`live-test-….md` im Protokollordner) und `debate-ai.log` an mich zurückgeben. Erst dann wird die Live-Funktion in `docs/STATUS.md` als geprüft markiert.
-
-## Wenn etwas nicht klappt
-
-- **NOVA antwortet nicht:** Gelber Hinweis „Offline-Probe aktiv“? Haken entfernen. Steht der Status dauerhaft auf „Gesprächspartner spricht“? Gastton ist dauerhaft laut (Musik): Sprecherwechsel „lokal“ mit Fairness aus nutzen.
-- **NOVA unterbricht sich selbst / antwortet sich selbst:** Echoprüfung wiederholen, Routing korrigieren. Die App schaltet bei erkanntem Selbstgespräch automatisch auf Halbduplex.
-- **NOVA redet zu früh:** Geduld auf „Geduldig“.
-- **NOVA reagiert zu träge:** Geduld „Ausgewogen“, Antwortlänge „Kurz“.
+Bitte schicke mir: die Ergebnisse aus dem Dialog (Schritt 4 und 7 stehen auch im Log), den Live-Testbericht, `debate-ai.log` und Beobachtungen zu Test 4 und 8.

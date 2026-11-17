@@ -47,6 +47,10 @@ namespace DebateAI
                 Run("Einrichtungsassistent: Warnungen bei Echo-gefährdetem Routing", TestSetupCheck);
                 Run("Persönlichkeitsprofile speichern und laden", TestProfiles);
                 Run("Stimmprobe spielt NOVAs Stimme und schließt die Sitzung", TestVoiceTest);
+                Run("Voicemeeter: TikTok-Routing-Plan, Anwenden, Rücklesen", TestVoicemeeterPlan);
+                Run("Routing-Messung erkennt richtige und falsche Wege", TestRoutingMeasurement);
+                Run("Gastton-Test und LIVE-Studio-Erkennung", TestGuestProbe);
+                Run("Kostenschätzung, Kostenlimit und Gast ausreden lassen", TestCostLimit);
                 Run("Realtime: Sitzungsaufbau, semantische VAD, KI-Hinweis", TestRealtimeStart);
                 Run("Realtime: Live-Ereignisse, Antwort-Audio, Gedächtnis, Kürzen", TestRealtimeLive);
                 Run("Realtime: API-Fehler, Warnungen und Verbindungsende", TestRealtimeErrors);
@@ -627,6 +631,154 @@ namespace DebateAI
                 var failing = new FakeDebater { StartError = new AppError("API-Schlüssel abgelehnt.") };
                 Wait(session.VoiceTest(() => new FakePlayback(), () => failing));
                 Check(session.State == Phase.Idle && session.Note.Contains("abgelehnt") && failing.Closed, "Fehler bei der Stimmprobe nicht gemeldet");
+            }
+        }
+
+        private sealed class FakeVoicemeeter : IVoicemeeter
+        {
+            public readonly Dictionary<string, float> Values = new Dictionary<string, float>();
+            public readonly Dictionary<string, string> Texts = new Dictionary<string, string>();
+            public readonly HashSet<string> Ignore = new HashSet<string>();
+            public int Kind { get { return 2; } }
+            public bool Running { get { return true; } }
+            public float Get(string parameter) { float value; return Values.TryGetValue(parameter, out value) ? value : 0; }
+            public void Set(string parameter, float value) { if (!Ignore.Contains(parameter)) Values[parameter] = value; }
+            public void SetText(string parameter, string value) { Texts[parameter] = value; }
+            public float Level(int type, int channel) { return type == 0 && channel == 6 ? 0.1f : 0; }
+            public List<string> InputDevices() { return new List<string> { "Mikrofonarray (Intel® Smart Sound Technologie für digitale Mikrofone)" }; }
+            public List<string> OutputDevices() { return new List<string> { "Lautsprecher (Realtek(R) Audio)", "Kopfhörer (Borofone B035)" }; }
+            public void Dispose() { }
+        }
+
+        private static void TestVoicemeeterPlan()
+        {
+            Check(VoicemeeterLayout.For(1) == null && VoicemeeterLayout.For(0) == null, "Standard-Voicemeeter darf nicht als getrennt gelten");
+            VoicemeeterLayout banana = VoicemeeterLayout.For(2), potato = VoicemeeterLayout.For(3);
+            Check(banana.Guest == 3 && banana.Nova == 4 && banana.GuestLevel[0] == 6 && banana.B1Level[0] == 24 && banana.B2Level[0] == 32, "Banana-Indizes falsch");
+            Check(potato.Guest == 5 && potato.Nova == 6, "Potato-Indizes falsch");
+            var vm = new FakeVoicemeeter();
+            string phones = VoicemeeterSetup.Pick(vm.OutputDevices(), "Borofone", "Kopfhörer");
+            string mic = VoicemeeterSetup.Pick(vm.InputDevices(), "Intel", "Mikrofon");
+            Check(phones == "Kopfhörer (Borofone B035)" && mic.StartsWith("Mikrofonarray"), "Gerätevorschlag falsch");
+            List<RoutingStep> plan = banana.Plan(phones, mic, true, false);
+            VoicemeeterSetup.Apply(vm, plan);
+            Check(vm.Get("Strip[3].A1") == 1 && vm.Get("Strip[3].B2") == 1 && vm.Get("Strip[3].B1") == 0 &&
+                vm.Get("Strip[4].B1") == 1 && vm.Get("Strip[4].B2") == 0 && vm.Get("Strip[4].A1") == 1 &&
+                vm.Get("Strip[0].B1") == 1 && vm.Get("Strip[0].B2") == 0 && vm.Get("Strip[0].A1") == 0, "Routing-Plan entspricht nicht der Vorgabe");
+            Check(vm.Texts["Bus[0].device.wdm"] == phones && vm.Texts["Strip[0].device.wdm"] == mic, "A1 oder Mikrofon nicht gesetzt");
+            Check(VoicemeeterSetup.Verify(vm, plan).Count == 0, "Rücklesen meldet Fehler");
+            vm.Values["Strip[4].B2"] = 1;
+            List<string> wrong = VoicemeeterSetup.Verify(vm, plan);
+            Check(wrong.Count == 1 && wrong[0].Contains("NOVA nicht auf B2"), "Falscher Schalter wird nicht erkannt");
+            Check(banana.Plan(null, null, false, true).Exists(step => step.Parameter == "Strip[0].B2" && step.Value == 1) &&
+                !banana.Plan(null, null, false, true).Exists(step => step.IsText), "Optionen falsch umgesetzt");
+            Check(VoicemeeterSetup.Decibel(0) == -90 && Math.Abs(VoicemeeterSetup.Decibel(0.1f) + 20) < 0.01 &&
+                Math.Abs(VoicemeeterSetup.Loudest(vm, 0, banana.GuestLevel) + 20) < 0.01, "Pegelumrechnung falsch");
+        }
+
+        // Simulated Voicemeeter: which playback device reaches which capture bus, with delay and attenuation.
+        private sealed class FakeMixer
+        {
+            public long Time;
+            public readonly HashSet<string> Routes = new HashSet<string>();
+            public string Playing;
+            public byte[] Signal;
+            public long Started;
+
+            public IPlayback Output(string name) { return new MixPlayback(this, name); }
+            public ICapture Input(string name) { return new MixCapture(this, name); }
+
+            private sealed class MixPlayback : IPlayback
+            {
+                private readonly FakeMixer mixer; private readonly string name;
+                public MixPlayback(FakeMixer mixer, string name) { this.mixer = mixer; this.name = name; }
+                public void Play(byte[] pcm) { mixer.Playing = name; mixer.Signal = pcm; mixer.Started = mixer.Time; }
+                public void Append(byte[] pcm) { }
+                public void Stop() { mixer.Playing = null; }
+                public bool Finished { get { return true; } }
+                public int PlayedMs { get { return 0; } }
+                public void Dispose() { mixer.Playing = null; }
+            }
+
+            private sealed class MixCapture : ICapture
+            {
+                private readonly FakeMixer mixer; private readonly string name;
+                public MixCapture(FakeMixer mixer, string name) { this.mixer = mixer; this.name = name; }
+                public void Drain(Action<byte[]> onFrame)
+                {
+                    if (onFrame == null) return;
+                    bool routed = mixer.Playing != null && mixer.Routes.Contains(mixer.Playing + ">" + name);
+                    onFrame(routed ? Slice(mixer.Signal, (int)(mixer.Time - mixer.Started) - 140, 40, 0.5) : Silence());
+                }
+                public void Dispose() { }
+            }
+        }
+
+        private static List<RouteResult> MeasureMix(FakeMixer mixer, string source, params string[] listeners)
+        {
+            var list = new List<Listener>();
+            foreach (string listener in listeners)
+            {
+                string name = listener.TrimEnd('!');
+                list.Add(new Listener { Name = name, Open = () => mixer.Input(name), Expected = listener.EndsWith("!") });
+            }
+            return RoutingMeasurement.Measure(source, () => mixer.Output(source), list, () => mixer.Time,
+                ms => { mixer.Time += ms; return Task.FromResult(0); }).GetAwaiter().GetResult();
+        }
+
+        private static void TestRoutingMeasurement()
+        {
+            var mixer = new FakeMixer();
+            mixer.Routes.Add("VAIO>B2"); mixer.Routes.Add("AUX>B1");
+            List<RouteResult> guest = MeasureMix(mixer, "VAIO", "B2!", "B1");
+            List<RouteResult> nova = MeasureMix(mixer, "AUX", "B1!", "B2");
+            Check(guest.TrueForAll(r => r.Ok) && nova.TrueForAll(r => r.Ok) && guest[0].Arrived && !guest[1].Arrived && nova[0].Arrived && !nova[1].Arrived,
+                "Korrektes Routing nicht bestätigt: " + guest[0].Describe() + " / " + guest[1].Describe() + " / " + nova[0].Describe() + " / " + nova[1].Describe());
+            Check(guest[0].Describe().StartsWith("✓") && guest[0].Peak > -40, "Ergebnistext oder Pegel falsch");
+            mixer.Routes.Add("AUX>B2");
+            List<RouteResult> loop = MeasureMix(mixer, "AUX", "B1!", "B2");
+            Check(loop[0].Ok && !loop[1].Ok && loop[1].Arrived && loop[1].Describe().StartsWith("✗"), "Rückweg NOVA → B2 nicht erkannt");
+            mixer.Routes.Clear();
+            Check(!MeasureMix(mixer, "VAIO", "B2!")[0].Ok, "Fehlender Gast-Weg nicht erkannt");
+        }
+
+        private static void TestGuestProbe()
+        {
+            var probe = new GuestProbe();
+            for (int i = 0; i < 10; i++) probe.Add(-30, -32, 100);
+            Check(!probe.VaioOk && probe.Describe().StartsWith("✗"), "Zu kurzer Gastton gilt als bestanden");
+            for (int i = 0; i < 10; i++) probe.Add(-30, -32, 100);
+            Check(probe.VaioOk && probe.InputOk && probe.Describe().StartsWith("✓"), "Gastton nicht bestätigt");
+            var noB2 = new GuestProbe();
+            for (int i = 0; i < 30; i++) noB2.Add(-25, -90, 100);
+            Check(noB2.VaioOk && !noB2.InputOk && noB2.Describe().Contains("B2 nicht"), "Fehlendes B2 nicht erkannt");
+            var silent = new GuestProbe();
+            silent.Add(-90, -90, 15000);
+            Check(silent.Describe().Contains("Kein Gastton"), "Stille nicht erkannt");
+            Check(LiveStudio.IsLiveStudio("TikTok LIVE Studio") && LiveStudio.IsLiveStudio("TikTokLiveStudio") && !LiveStudio.IsLiveStudio("TikTok") &&
+                !LiveStudio.IsLiveStudio("obs64"), "LIVE-Studio-Erkennung falsch");
+        }
+
+        private static void TestCostLimit()
+        {
+            var usage = new TokenUsage { AudioIn = 100000, AudioCached = 50000, AudioOut = 10000, TextIn = 20000, TextOut = 1000 };
+            double expected = (50000 * 10.0 + 50000 * 0.30 + 10000 * 20.0 + 20000 * 0.60 + 1000 * 2.40) / 1000000.0;
+            Check(Math.Abs(usage.Cost - expected) < 1e-9, "Kostenformel falsch");
+            using (var rig = new Rig(new SessionOptions { RoutingVerified = true, CostLimit = 1.0 }, true))
+            {
+                rig.Emit(LiveKind.Committed); rig.Tick();
+                rig.Ai.Sink.Write(Long(300)); rig.Tick();
+                rig.Ai.Events.Enqueue(new LiveEvent(LiveKind.AnswerDone) { Completed = true, Tokens = new TokenUsage { AudioIn = 30000, AudioOut = 20000 } });
+                rig.Output.Done = true; rig.Tick();
+                Check(Math.Abs(rig.Session.Metrics.Cost - 0.7) < 1e-9 && !rig.Session.Muted && !rig.Session.CostLimitReached, "Kosten falsch gezählt");
+                rig.Ai.Events.Enqueue(new LiveEvent(LiveKind.Usage) { Tokens = new TokenUsage { AudioOut = 20000 } }); rig.Tick();
+                Check(rig.Session.CostLimitReached && rig.Session.Muted && rig.Session.Note.Contains("Kostenlimit"), "Kostenlimit schaltet NOVA nicht stumm");
+                rig.Emit(LiveKind.Committed); rig.Tick();
+                Check(rig.Ai.Responds == 1, "Nach dem Kostenlimit antwortet NOVA weiter");
+                Check(rig.Session.Metrics.Report("0.5.0", "x").Contains("Geschätzte OpenAI-Kosten"), "Kosten fehlen im Testbericht");
+                Check(rig.Session.Fairness, "Fairness sollte an sein");
+                rig.Session.Fairness = false;
+                Check(!rig.Session.Fairness, "Gast ausreden lassen lässt sich nicht umschalten");
             }
         }
 

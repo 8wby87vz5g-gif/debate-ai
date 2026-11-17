@@ -1,8 +1,11 @@
 # DEBATE AI · Projektstatus
 
-Stand: 17.11.2026 · Windows-Client 0.4.0
+Stand: 17.11.2026 · Windows-Client 0.5.0
 
 Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter Hardware / mit echter OpenAI-Verbindung / mit TikTok** · 🟡 teilweise · ❌ fehlt
+
+> **Fortschritt:** Lokale Debatte mit echter OpenAI-Verbindung auf deinem Windows-PC funktioniert (dein Test, Reaktionszeit ca. 1–2 s).
+> **TikTok-Kette (Voicemeeter Banana, LIVE Studio, echter Gast): ungetestet.** Ablauf: `docs/HARDWARE-TEST.md`.
 
 > **Wichtig:** Die Live-Pflichtabnahme (echter Mensch, TikTok LIVE, ≥ 10 Wechsel, gemessene Latenz) ist **noch nicht durchgeführt**. Alle Live-Funktionen gelten bis dahin als ungetestet. Ablauf: `docs/HARDWARE-TEST.md`.
 
@@ -23,7 +26,9 @@ Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter H
 | Flüssig, geringe Verzögerung | Streaming in beide Richtungen; Wiedergabe ab 240 ms Puffer | ✅ | ⚪ Latenz ungemessen |
 | Latenz messen und dokumentieren | Messung pro Antwort (Satzende → hörbar, Anforderung → erstes Audio), Anzeige, Live-Testbericht | ✅ | ⚪ |
 | Klar als KI erkennbar | Gesprochener Hinweis beim Start, Dauerhinweis in der App, Anleitung für Stream-Einblendung | ✅ | ⚪ |
-| TikTok-LIVE-Pipeline | Routing mit Voicemeeter Banana dokumentiert (`docs/LIVE-SETUP.md`) | – | ⚪ |
+| TikTok-LIVE-Pipeline | „TikTok LIVE verbinden“: Voicemeeter-Fernsteuerung, Routing-Messung, Gastton-Test, OpenAI-Test, Startfreigabe | ✅ mit simuliertem Mischpult | ⚪ |
+| Lokale Debatte mit echter OpenAI-API | – | – | ✅ **von dir bestätigt**, ca. 1–2 s |
+| Kosten und Kostenlimit | Schätzung aus Token-Angaben von OpenAI, Limit schaltet NOVA stumm | ✅ | ⚪ Preise ohne Mitschrift |
 
 ### Bekannte Grenzen
 

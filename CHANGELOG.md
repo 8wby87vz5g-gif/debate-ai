@@ -1,5 +1,17 @@
 # Änderungsprotokoll
 
+## 0.5.0 · 17.11.2026 · TikTok-LIVE-Integration
+
+- **„TikTok LIVE verbinden“**: Prüfdialog für die gesamte Audiokette mit Startfreigabe erst nach bestandenen Prüfungen. Behauptet keine Verbindung zu TikTok.
+- **Voicemeeter-Fernsteuerung** über die offizielle VoicemeeterRemote-API: erkennt Standard/Banana/Potato, startet Banana auf Wunsch, richtet das TikTok-Routing ein (Gast → A1 + B2, NOVA → B1, Mikrofon → B1, A1-Kopfhörer, Hardware-Mikrofon), zeigt Änderungen vorher an und liest sie zurück.
+- **Routing-Messung**: Testsignale auf Gast-Weg und NOVA-Weg; prüft per Korrelation, dass sie genau auf B2 bzw. B1 ankommen und nicht zurücklaufen.
+- **Gastton-Test** über die Voicemeeter-Pegel (VAIO) und den DEBATE-AI-Eingang (B2); ehrlicher Hinweis, wenn LIVE Studio den Gast nicht getrennt ausgibt, mit dokumentierter Alternative (Anruf-App).
+- **OpenAI-Verbindungstest** mit gemessener Aufbauzeit; Erkennung, ob TikTok LIVE Studio läuft.
+- **Live-Kontrollzeile**: Eingang, NOVA-Ausgang, OpenAI, Gast spricht, Echo-Warnung, geschätzte Kosten.
+- **Kostenschätzung und Kostenlimit** (Standard 5 $ pro Debatte; danach ist NOVA stumm).
+- Knopf **„Gast ausreden lassen“** schaltet während der Debatte um.
+- TikTok-Profil nutzt jetzt „Geduld: ausgewogen“ (wie dein funktionierendes lokales Setup).
+
 ## 0.4.1 · 17.11.2026
 
 - Diagnose-Protokoll für den ersten Live-Test: `debate-ai.log` enthält jetzt die Art jedes OpenAI-Ereignisses (gesendet → / empfangen ←) und die Fehlermeldungen von OpenAI im Wortlaut. Keine Audiodaten, keine Gesprächsinhalte, keine Schlüssel.

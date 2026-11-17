@@ -23,7 +23,7 @@ namespace DebateAI
             new ScenarioPreset
             {
                 Name = "TikTok LIVE Studio", Inputs = VirtualInputs, Outputs = VirtualOutputs,
-                Mode = 0, Patience = 0, BargeIn = 0, Length = 0, Proactive = 10,
+                Mode = 0, Patience = 1, BargeIn = 0, Length = 0, Proactive = 10,
                 Summary = "Gast aus LIVE Studio hören, NOVA als Mikrofon in den Stream. Kurze, schlagfertige Antworten; NOVA stoppt, wenn der Gast unterbricht; nach 10 s Stille fragt sie nach.",
                 Routing = "Voicemeeter Banana: LIVE Studio gibt auf „Voicemeeter Input“ aus (A1 + B2 an, B1 aus). DEBATE AI hört B2, spricht auf „Voicemeeter AUX Input“ (B1 an, B2 aus). In LIVE Studio „Voicemeeter Out B1“ als Mikrofon wählen."
             },
