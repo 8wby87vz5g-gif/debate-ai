@@ -130,7 +130,7 @@ namespace DebateAI
 
     internal sealed partial class MainForm : Form
     {
-        public const string Version = "0.7.1";
+        public const string Version = "0.7.2";
 
         private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();
@@ -155,7 +155,7 @@ namespace DebateAI
         private readonly CheckBox informed = Wide("Alle Sprecher wissen, dass NOVA eine KI ist und ihre Beiträge an OpenAI gehen, und sind einverstanden.");
         private readonly NumericUpDown threshold = Number(-60, -15, -40, 1), pauseMs = Number(300, 3000, 1200, 100),
             guard = Number(400, 2500, 900, 100), turnSeconds = Number(5, 120, 30, 5),
-            bargeMs = Number(200, 2000, 500, 100), proactive = Number(0, 60, 0, 5), costLimit = Number(0, 100, 5, 1);
+            bargeMs = Number(200, 2000, 500, 100), proactive = Number(0, 60, 0, 5), costLimit = Money(0, 100, 1.00m, 0.10m);
         private readonly ToolTip tips = new ToolTip();
         private readonly Button refresh = Button("Geräte neu laden"), setup = Button("Voicemeeter finden"), routing = Button("Routing-Hilfe"),
             key = Button("API-Schlüssel"), log = Button("Protokollordner"), wipe = Button("Lokale Daten löschen"),
@@ -512,7 +512,7 @@ namespace DebateAI
                 for (int i = 0; i < devices.Items.Count; i++)
                 {
                     Device candidate = devices.Items[i] as Device;
-                    if (candidate != null && candidate.Name.IndexOf(names[n], StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (candidate != null && VirtualDevices.Matches(candidate.Name, names[n]))
                         return i;
                 }
             return -1;
@@ -523,17 +523,26 @@ namespace DebateAI
         private void SelectTikTokDevices()
         {
             RefreshDevices();
-            int bananaInput = FindDevice(input, "Voicemeeter Out B2", "Voicemeeter AUX Output", "Voicemeeter AUX Out");
-            int bananaOutput = FindDevice(output, "Voicemeeter AUX Input", "Voicemeeter AUX In");
-            if (bananaInput >= 0 && bananaOutput >= 0)
+            Device bananaInput = FindB2(), bananaOutput = FindAux();
+            if (bananaInput != null && bananaOutput != null)
             {
-                input.SelectedIndex = bananaInput;
-                output.SelectedIndex = bananaOutput;
+                input.SelectedItem = bananaInput;
+                output.SelectedItem = bananaOutput;
                 MessageBox.Show(this, "Banana-Geräte erkannt und ausgewählt.\n\n" + RoutingInstructionsBanana(),
                     "DEBATE AI · Banana", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            int standardInput = FindDevice(input, "Voicemeeter Out B1", "Voicemeeter Output");
+            if (bananaInput != null && bananaOutput == null && DevicesOf(output).Exists(VirtualDevices.IsUnnamedVirtualOutput))
+            {
+                input.SelectedItem = bananaInput;
+                output.SelectedIndex = -1;
+                MessageBox.Show(this, "Voicemeeter-B2 erkannt: " + bananaInput.Name + "\n\nWindows nennt die Voicemeeter-Ausgänge auf diesem PC nicht eindeutig " +
+                    "(z. B. mehrfach „Lautsprecher (VB-Audio Voicemeeter VAIO)“). Bitte „TikTok LIVE verbinden“ öffnen und unter Schritt 3 " +
+                    "„Ausgänge per Testton zuordnen“ wählen. Den NOVA-Ausgang nicht raten: ein falscher Ausgang erzeugt Echo.",
+                    "DEBATE AI · Banana", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            int standardInput = FindDevice(input, VirtualDevices.B1);
             if (standardInput >= 0) input.SelectedIndex = standardInput;
             // In the one-bus edition an automatic NOVA output selection can create a loop.
             output.SelectedIndex = -1;
@@ -572,8 +581,7 @@ namespace DebateAI
 
         private void ShowRoutingHelp()
         {
-            bool banana = FindDevice(input, "Voicemeeter Out B2", "Voicemeeter AUX Output") >= 0 &&
-                          FindDevice(output, "Voicemeeter AUX Input") >= 0;
+            bool banana = FindB2() != null && (FindAux() != null || DevicesOf(output).Exists(VirtualDevices.IsUnnamedVirtualOutput));
             MessageBox.Show(this, banana ? RoutingInstructionsBanana() : RoutingInstructionsStandard(),
                 "DEBATE AI · Echo vermeiden", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -594,7 +602,9 @@ namespace DebateAI
 
         private void Render()
         {
-            if (session.State == Phase.Idle && session.Note != null && session.Note.StartsWith("Gestoppt", StringComparison.Ordinal)) failed = false;
+            // A finished stop or a passed echo check is a normal result, not an error.
+            if (session.State == Phase.Idle && session.Note != null && (session.Note.StartsWith("Gestoppt", StringComparison.Ordinal) ||
+                session.Note.StartsWith("Kein Echo", StringComparison.Ordinal))) failed = false;
             else if (session.State == Phase.Idle && session.Note != null) failed = true;
             bool ready = session.ReadyForStart;
             bool hasInput = input.SelectedItem != null;
@@ -658,6 +668,7 @@ namespace DebateAI
                 : CloudMode && !LocalData.HasKey ? "Kein API-Schlüssel hinterlegt (für OpenAI nötig; der lokale Modus braucht keinen)." : !informed.Checked && ready ? "Bitte die Einwilligung der Sprecher bestätigen." : "";
             api.Text = offline.Checked ? "API: offline" : LocalMode ? "KI: lokal · " + localModels.Llm + " · Whisper " + localModels.Whisper + " · Piper " + localModels.Voice :
                 session.State == Phase.Idle || ready ? "API: " + (LocalData.HasKey ? "Schlüssel hinterlegt · " + RealtimeDebater.Model : "kein Schlüssel") :
+                session.State == Phase.Meter || session.State == Phase.Tone || session.State == Phase.EchoTest ? "API: nicht verbunden (Audioprüfung, keine Kosten)" :
                 session.State == Phase.Connecting ? "API: verbindet …" : "API: Verbindung aktiv · " + RealtimeDebater.Model + " · Antworten: " + session.Answers;
             string echoState = session.EchoCheckPassed == true ? "Echoprüfung bestanden" : session.EchoCheckPassed == false ? "Echo erkannt" : "Echoprüfung offen";
             live.Text = session.Metrics.Short() + " · Antworten " + session.Answers + " · " + echoState +
@@ -772,6 +783,8 @@ namespace DebateAI
             values["threshold"] = (int)threshold.Value; values["pause"] = (int)pauseMs.Value; values["guard"] = (int)guard.Value; values["turn"] = (int)turnSeconds.Value;
             var inDevice = input.SelectedItem as Device; var outDevice = output.SelectedItem as Device;
             values["input"] = inDevice == null ? "" : inDevice.Name; values["output"] = outDevice == null ? "" : outDevice.Name;
+            values["inputEndpoint"] = inDevice == null ? "" : inDevice.Endpoint ?? ""; values["outputEndpoint"] = outDevice == null ? "" : outDevice.Endpoint ?? "";
+            values["vaioEndpoint"] = vaioEndpoint ?? ""; values["auxEndpoint"] = auxEndpoint ?? "";
             values["profiles"] = profiles;
             LocalData.SaveSettings(values);
         }
@@ -803,15 +816,33 @@ namespace DebateAI
             UpdateConsentText();
             Set(threshold, values, "threshold"); Set(pauseMs, values, "pause"); Set(guard, values, "guard"); Set(turnSeconds, values, "turn");
             savedInput = LocalData.Text(values, "input", ""); savedOutput = LocalData.Text(values, "output", "");
+            savedInputEndpoint = LocalData.Text(values, "inputEndpoint", ""); savedOutputEndpoint = LocalData.Text(values, "outputEndpoint", "");
+            vaioEndpoint = LocalData.Text(values, "vaioEndpoint", ""); auxEndpoint = LocalData.Text(values, "auxEndpoint", "");
         }
 
-        private string savedInput = "", savedOutput = "";
+        private string savedInput = "", savedOutput = "", savedInputEndpoint = "", savedOutputEndpoint = "";
+        // Playback endpoints identified by test signal when Windows gives them no telling name.
+        private string vaioEndpoint = "", auxEndpoint = "";
 
         private void RestoreDevices()
         {
-            for (int i = 0; i < input.Items.Count; i++) if (((Device)input.Items[i]).Name == savedInput) input.SelectedIndex = i;
-            for (int i = 0; i < output.Items.Count; i++) if (((Device)output.Items[i]).Name == savedOutput) output.SelectedIndex = i;
+            int i = VirtualDevices.Restore(DevicesOf(input), savedInputEndpoint, savedInput);
+            if (i >= 0) input.SelectedIndex = i;
+            int o = VirtualDevices.Restore(DevicesOf(output), savedOutputEndpoint, savedOutput);
+            if (o >= 0) output.SelectedIndex = o;
         }
+
+        private static List<Device> DevicesOf(ComboBox box)
+        {
+            var devices = new List<Device>();
+            foreach (object item in box.Items) { var device = item as Device; if (device != null) devices.Add(device); }
+            return devices;
+        }
+
+        private Device FindB1() { return VirtualDevices.Find(DevicesOf(input), VirtualDevices.B1, null); }
+        private Device FindB2() { return VirtualDevices.Find(DevicesOf(input), VirtualDevices.B2, null); }
+        private Device FindVaio() { return VirtualDevices.Find(DevicesOf(output), VirtualDevices.Vaio, "AUX") ?? VirtualDevices.ByEndpoint(DevicesOf(output), vaioEndpoint); }
+        private Device FindAux() { return VirtualDevices.Find(DevicesOf(output), VirtualDevices.Aux, null) ?? VirtualDevices.ByEndpoint(DevicesOf(output), auxEndpoint); }
 
         private static void Select(ComboBox box, Dictionary<string, object> values, string name)
         {

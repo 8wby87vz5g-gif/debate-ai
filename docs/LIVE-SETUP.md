@@ -32,6 +32,17 @@ TikTok-Gast ← LIVE-Stream ← LIVE Studio (Mikrofon: Voicemeeter Out B1) ← B
 
 **Startfreigabe** gibt es erst, wenn 3, 4, 5, 6, 7 und 9 bestanden sind. Dann startet „Live-Debatte starten“ NOVA mit dem TikTok-Profil (OpenAI-Satzende, Geduld ausgewogen, kurze Antworten, NOVA stoppt bei Unterbrechung, Vollduplex ab dem ersten Wort, weil die Messung kein Echo gezeigt hat).
 
+## Wenn Windows die Voicemeeter-Geräte anders benennt (ab 0.7.2)
+
+Neuere Voicemeeter-Treiber unter Windows 11 heißen oft nicht „Voicemeeter Out B1/B2“ und „Voicemeeter AUX Input“, sondern:
+
+- Aufnahme: „Voicemeeter Out 1“ … „Out 8“ (Reihenfolge A1–A5, B1–B3). **B1 = „Out 6“, B2 = „Out 7“.** In LIVE Studio als Mikrofon also „Voicemeeter Out 6“ wählen, wenn es kein „Out B1“ gibt.
+- Wiedergabe: acht gleichnamige „Lautsprecher (VB-Audio Voicemeeter VAIO)“. Welcher davon „Voicemeeter Input“ (Gast) und welcher „AUX Input“ (NOVA) ist, sieht man am Namen nicht.
+
+DEBATE AI erkennt B1/B2 automatisch. Für die Wiedergabegeräte in „TikTok LIVE verbinden“ → Schritt 3 **„Ausgänge per Testton zuordnen“** drücken (Voicemeeter muss laufen, Routing aus Schritt 2 aktiv). Danach Schritt 4 messen. Für LIVE Studio („Lautsprecher / Audiogerät“) den Ausgang nehmen, den die Zuordnung als „Voicemeeter Input“ meldet; im Windows-Sounddialog (`mmsys.cpl`) kann man ihn zur Übersicht in „Voicemeeter Input“ umbenennen.
+
+**Bluetooth-Kopfhörer als A1:** Nutzt Windows oder eine App gleichzeitig das Headset-Mikrofon, schaltet der Kopfhörer in den Freisprech-Modus (16 kHz, mono) und Voicemeeter meldet „Failed to Open Main Output Device (A1)“. Dann läuft kein Ton durch Voicemeeter. Abhilfe: In Voicemeeter A1 über **MME** statt WDM wählen, als Eingang 1 das eingebaute Mikrofon (nicht das Headset-Mikrofon) nehmen, im Sounddialog unter „Aufnahme“ das Headset-Mikrofon deaktivieren und unter „Kommunikation“ „Nichts unternehmen“ wählen.
+
 ## Wenn LIVE Studio den Gast nicht getrennt ausgibt
 
 Der Gastton-Test (Schritt 7) zeigt das ehrlich: Kommt bei VAIO nichts an oder hörst du dort auch dich selbst und den Stream, gibt LIVE Studio den Gast nicht getrennt aus. **Unterstützte Alternative:** Den Gast über eine Anruf-App (z. B. Discord, Zoom) zuschalten, deren **Lautsprecher** `Voicemeeter Input` und deren **Mikrofon** `Voicemeeter Out B1` ist. In LIVE Studio bleibt `Voicemeeter Out B1` das Mikrofon; damit das Publikum den Gast hört, in LIVE Studio zusätzlich `Voicemeeter Out B2` als zweite Audioquelle hinzufügen. In Schritt 6 „Stattdessen: Gast über eine Anruf-App“ ankreuzen.
@@ -42,7 +53,7 @@ DEBATE AI liefert die Live-Szene selbst aus, nur auf deinem PC (`127.0.0.1`), oh
 
 ![Szene](overlay-szene.png)
 
-1. DEBATE AI starten → „3 · Gesprächssteuerung“ → **Stream-Overlay (Link kopieren)**. Der Link lautet normalerweise `http://127.0.0.1:18190/nova`.
+1. DEBATE AI starten → „3 · Gesprächssteuerung“ → **Stream-Overlay (Link kopieren)**. Der Link lautet normalerweise `http://127.0.0.1:18190/nova`. Ist der Port belegt (z. B. weil DEBATE AI mehrfach läuft), nimmt die App 18191–18194; dann nur eine DEBATE-AI-Instanz laufen lassen, damit der Link in der Szene stimmt.
 2. TikTok LIVE Studio → neue **vertikale** Szene „DEBATE AI – NOVA LIVE“ → Quelle hinzufügen → **Link** → Link einfügen → Größe **1080 × 1920**.
 3. Die Link-Quelle **ganz nach unten** legen. Kamera (oder Gast-Fenster) darüber in den Rahmen „GAST“ ziehen.
 4. Alternative ohne Hintergrund: `http://127.0.0.1:18190/nova?view=badge` ist durchsichtig und zeigt nur Titel, KI-Hinweis und Sprechanzeige über der Kamera.
