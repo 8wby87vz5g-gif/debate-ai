@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 0.7.0 · 17.11.2026 · Live-Szene und Kostenschutz
+
+- **Stream-Overlay für TikTok LIVE Studio:** DEBATE AI liefert eine 9:16-Szene „DU GEGEN NOVA“ über `http://127.0.0.1:18190/nova` (Link-Quelle): KI-Hinweis, Thema, Gastrahmen, NOVA-Figur, die auf NOVAs echte Ausgabelautstärke reagiert; durchsichtige Variante `?view=badge`. Nur lokal erreichbar, nur GET, fremde Hosts abgelehnt.
+- **Kostenlimit beendet auf Wunsch die OpenAI-Sitzung vollständig** (Standard an), Limit jetzt in 0,10-$-Schritten, Standard 1,00 $.
+- NOVAs Ausgabepegel wird gemessen (Sprechanzeige).
+
 ## 0.6.2 · 17.11.2026
 
 - Behoben: Direkt nach einem Modell-Download meldete die App fälschlich „Ollama nicht erreichbar“ (Ollama antwortete langsamer als 3 s). Jetzt längere Wartezeit mit Wiederholung.

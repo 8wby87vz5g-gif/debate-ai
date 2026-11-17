@@ -1,6 +1,6 @@
 # DEBATE AI · Projektstatus
 
-Stand: 17.11.2026 · Windows-Client 0.6.2
+Stand: 17.11.2026 · Windows-Client 0.7.0
 
 Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter Hardware / mit echter OpenAI-Verbindung / mit TikTok** · 🟡 teilweise · ❌ fehlt
 
@@ -30,7 +30,8 @@ Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter H
 | Lokale Debatte mit echter OpenAI-API | – | – | ✅ **von dir bestätigt**, ca. 1–2 s |
 | Lokaler KI-Modus (whisper.cpp, Ollama, Piper), kostenlos | Satzweise Ausgabe, Verlauf, Gedächtnis, Unterbrechen, Sicherheitssperre nur 127.0.0.1 | ✅ simuliert **und echt auf GitHub-Windows-VM** (2,5–8 s Reaktionszeit ohne GPU) | ⚪ **auf deinem PC ungetestet** |
 | Eigentümer-Lizenz | Signiert, PC-gebunden; öffentlicher Schlüssel muss noch eingebaut werden | ✅ | ⚪ |
-| Kosten und Kostenlimit | Schätzung aus Token-Angaben von OpenAI, Limit schaltet NOVA stumm | ✅ | ⚪ Preise ohne Mitschrift |
+| Stream-Overlay „DU GEGEN NOVA“ (LIVE-Studio-Link-Quelle) | Lokaler Server, 9:16-Szene, Sprechanzeige nach NOVAs Pegel | ✅ (Server echt über TCP, Darstellung in Chrome geprüft) | ⚪ **in LIVE Studio ungetestet** |
+| Kosten und Kostenlimit | Schätzung aus Token-Angaben von OpenAI, Limit schaltet NOVA stumm oder beendet die Sitzung ganz (Standard) | ✅ | ⚪ Preise ohne Mitschrift |
 
 ### Bekannte Grenzen
 

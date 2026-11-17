@@ -119,6 +119,7 @@ namespace DebateAI
         public bool Memory = true;           // debate log for long debates (needs transcription)
         public bool RoutingVerified;         // echo check passed: full duplex from the first word
         public double CostLimit;             // USD per debate; 0 = no limit. Reaching it mutes NOVA.
+        public bool StopAtCostLimit;         // Reaching the limit also ends the paid session completely.
     }
 
     // Live debate control. All state and device access belongs to the WinForms thread.
@@ -434,6 +435,7 @@ namespace DebateAI
             try
             {
                 long now = milliseconds();
+                if (stopForCost) { stopForCost = false; EndForCost(); return; }
                 await TakeEvents(now);
                 if (capture != null) DrainInput(now);
                 Advance(now);
@@ -598,8 +600,20 @@ namespace DebateAI
                 Log("Kostenlimit erreicht: " + Metrics.CostText());
                 Note = "Kostenlimit von " + options.CostLimit.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) +
                     " $ erreicht. NOVA ist stummgeschaltet und hört nur noch zu.";
+                // Ending the session is deferred to the next tick, outside the event loop that is still using the debater.
+                if (options.StopAtCostLimit) stopForCost = true;
                 Changed();
             }
+        }
+
+        private bool stopForCost;
+
+        private void EndForCost()
+        {
+            string cleanupError = Release();
+            Log("Kostenlimit: Sitzung beendet bei " + Metrics.CostText());
+            Set(Phase.Idle, cleanupError ?? "Kostenlimit von " + options.CostLimit.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) +
+                " $ erreicht. Die OpenAI-Sitzung wurde vollständig beendet, es entstehen keine weiteren Kosten. Bisher ca. " + Metrics.CostText() + ".");
         }
 
         private void DrainInput(long now)
@@ -786,9 +800,42 @@ namespace DebateAI
             return serverTurns ? "Bereit. NOVA hört zu und erkennt selbst, wann du fertig bist." : "Bereit. NOVA hört zu und antwortet nach einer Sprechpause.";
         }
 
+        // NOVA's own output level, frame by frame, for the speaking indicator (overlay, orb).
+        private const int EnvelopeMs = 40;
+        private readonly List<float> envelope = new List<float>();
+        private int envelopeStartMs;
+        private double envelopeSum;
+        private int envelopeSamples;
+
+        public double NovaLevel
+        {
+            get
+            {
+                if (State != Phase.Speaking || playback == null) return -90;
+                int index = (playback.PlayedMs - envelopeStartMs) / EnvelopeMs;
+                return index >= 0 && index < envelope.Count ? envelope[index] : -90;
+            }
+        }
+
+        private void AddEnvelope(byte[] pcm)
+        {
+            int frame = WinAudio.Rate * EnvelopeMs / 1000;
+            for (int i = 0; i + 1 < pcm.Length; i += 2)
+            {
+                double sample = (short)(pcm[i] | pcm[i + 1] << 8) / 32768.0;
+                envelopeSum += sample * sample;
+                if (++envelopeSamples < frame) continue;
+                double rms = Math.Sqrt(envelopeSum / envelopeSamples);
+                envelope.Add((float)(rms > 1e-5 ? 20 * Math.Log10(rms) : -90));
+                envelopeSum = 0; envelopeSamples = 0;
+            }
+        }
+
         private void StartSpeaking(long now)
         {
             playback.Stop();
+            envelope.Clear(); envelopeSum = 0; envelopeSamples = 0;
+            envelopeStartMs = playback.PlayedMs;
             Pump(now);
             Metrics.Answers++;
             if (turnEndAt > 0) { Metrics.Latency.Add((int)(now - turnEndAt)); Log("Latenz " + (now - turnEndAt) + " ms"); }
@@ -806,6 +853,7 @@ namespace DebateAI
             {
                 playback.Append(chunk);
                 echo.AddReference(chunk, now);
+                AddEnvelope(chunk);
             }
         }
 

@@ -128,7 +128,7 @@ namespace DebateAI
                 {
                     novaRow.Show(true, "NOVA: " + personaName.Text + " · " + style.Text + " · " + length.Text +
                         (position.Text.Trim().Length != 0 ? " · Position: " + position.Text.Trim() : "") +
-                        " · Kostenlimit: " + (costLimit.Value == 0 ? "keins (nicht empfohlen)" : costLimit.Value + " $ pro Debatte"));
+                        " · Kostenlimit: " + (costLimit.Value == 0 ? "keins (nicht empfohlen)" : costLimit.Value.ToString("0.00") + " $ pro Debatte" + (stopAtLimit.Checked ? ", danach wird die Sitzung beendet" : ", danach nur stumm")));
                     bool studio = (liveMic.Checked && liveOut.Checked) || (liveMic.Checked && altGuest.Checked);
                     studioRow.Show(studio ? (bool?)true : null, (LiveStudio.Running() ? "TikTok LIVE Studio läuft. " : "TikTok LIVE Studio wurde nicht gefunden (bitte starten). ") +
                         "DEBATE AI verbindet sich nicht selbst mit TikTok; es nutzt die Audiogeräte, die LIVE Studio verwendet.");

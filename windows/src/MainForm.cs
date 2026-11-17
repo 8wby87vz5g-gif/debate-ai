@@ -130,7 +130,7 @@ namespace DebateAI
 
     internal sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.2";
+        public const string Version = "0.7.0";
 
         private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();
@@ -140,6 +140,10 @@ namespace DebateAI
         private readonly ComboBox aiMode = Combo();
         private readonly Label modeLabel = new Label { AutoSize = true, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold) };
         private readonly Label licenseLabel = new Label { AutoSize = true, ForeColor = Theme.Muted, MaximumSize = new Size(460, 0) };
+        private readonly Button overlayButton = Button("Stream-Overlay (Link kopieren)");
+        private readonly CheckBox stopAtLimit = Check("Bei Kostenlimit OpenAI-Sitzung ganz beenden");
+        private OverlayServer overlay;
+        private long overlayAt;
         private readonly Button localSetup = Button("Lokale KI einrichten"), licenseButton = Button("Lizenz eingeben"), machineButton = Button("Geräte-ID kopieren");
         private LicenseInfo license = Licensing.Load();
         private bool LocalMode { get { return aiMode.SelectedIndex == 1; } }
@@ -240,11 +244,14 @@ namespace DebateAI
                 try { Clipboard.SetText(Licensing.MachineId()); MessageBox.Show(this, "Geräte-ID kopiert: " + Licensing.MachineId(), "Lizenz"); } catch (Exception) { }
             };
             informed.CheckedChanged += delegate { Render(); };
+            overlayButton.Click += delegate { ShowOverlay(); };
+            StartOverlay();
             tick.Tick += async delegate
             {
                 await session.Tick();
                 if (IsDisposed) return;
                 RenderLevel();
+                UpdateOverlay();
             };
             FormClosing += delegate { SaveSettings(); };
             RefreshDevices();
@@ -395,7 +402,7 @@ namespace DebateAI
                 Grid(Pair("Sprecherwechsel", mode), Pair("Geduld beim Satzende", patience), Pair("Wenn der Gast unterbricht", barge)),
                 fairness, echoGuard, memory,
                 Row(Caption("Unterbrechung ab ms"), bargeMs, Caption("Nachfrage nach s"), proactive),
-                Row(Caption("Kostenlimit $ pro Debatte (0 = aus)"), costLimit),
+                Row(Caption("Kostenlimit $ pro Debatte (0 = aus)"), costLimit), stopAtLimit, Row(overlayButton),
                 Row(Caption("Schwelle dBFS"), threshold, Caption("Sprechpause ms"), pauseMs),
                 Row(Caption("Nachlauf ms"), guard, Caption("Max. Redezeit s"), turnSeconds),
                 Row(offline), Row(key, log, wipe), Row(report), informed, licenseLabel, Row(licenseButton, machineButton)));
@@ -449,7 +456,7 @@ namespace DebateAI
                 BargeIn = barge.SelectedIndex == 1 ? BargeIn.Finish : barge.SelectedIndex == 2 ? BargeIn.Ignore : BargeIn.Stop,
                 BargeInMs = (int)bargeMs.Value, EchoGuard = echoGuard.Checked, ProactiveSeconds = (int)proactive.Value,
                 Memory = memory.Checked && transcribe.Checked, RoutingVerified = session.EchoCheckPassed == true || liveChecked,
-                CostLimit = (double)costLimit.Value
+                CostLimit = (double)costLimit.Value, StopAtCostLimit = stopAtLimit.Checked
             };
         }
 
@@ -595,7 +602,7 @@ namespace DebateAI
             bool measuring = session.State == Phase.Meter;
             foreach (Control control in new Control[] { input, output, mode, threshold, guard, pauseMs, refresh, setup, offline, key, fairness,
                 turnSeconds, style, intensity, length, voice, language, personaName, topic, position, transcribe, wipe, patience, barge, echoGuard,
-                memory, bargeMs, proactive, wizard, profileBox, saveProfile, deleteProfile, costLimit, tiktok, aiMode, localSetup })
+                memory, bargeMs, proactive, wizard, profileBox, saveProfile, deleteProfile, costLimit, stopAtLimit, tiktok, aiMode, localSetup })
                 control.Enabled = ready;
             informed.Enabled = ready && !offline.Checked;
             start.Enabled = ready && hasInput && hasOutput && (offline.Checked || informed.Checked && (LocalMode || LocalData.HasKey));
@@ -760,7 +767,7 @@ namespace DebateAI
             values["name"] = personaName.Text; values["topic"] = topic.Text; values["position"] = position.Text;
             values["fairness"] = fairness.Checked; values["transcribe"] = transcribe.Checked;
             values["patience"] = patience.SelectedIndex; values["barge"] = barge.SelectedIndex; values["echoGuard"] = echoGuard.Checked;
-            values["memory"] = memory.Checked; values["costLimit"] = (int)costLimit.Value;
+            values["memory"] = memory.Checked; values["costLimitCents"] = (int)(costLimit.Value * 100); values["stopAtLimit"] = stopAtLimit.Checked;
             values["aiMode"] = aiMode.SelectedIndex; values["localLlm"] = localModels.Llm; values["localWhisper"] = localModels.Whisper; values["localVoice"] = localModels.Voice; values["bargeMs"] = (int)bargeMs.Value; values["proactive"] = (int)proactive.Value;
             values["threshold"] = (int)threshold.Value; values["pause"] = (int)pauseMs.Value; values["guard"] = (int)guard.Value; values["turn"] = (int)turnSeconds.Value;
             var inDevice = input.SelectedItem as Device; var outDevice = output.SelectedItem as Device;
@@ -784,7 +791,10 @@ namespace DebateAI
             transcribe.Checked = LocalData.Flag(values, "transcribe", transcribe.Checked);
             Select(patience, values, "patience"); Select(barge, values, "barge");
             echoGuard.Checked = LocalData.Flag(values, "echoGuard", true); memory.Checked = LocalData.Flag(values, "memory", true);
-            Set(bargeMs, values, "bargeMs"); Set(proactive, values, "proactive"); Set(costLimit, values, "costLimit");
+            Set(bargeMs, values, "bargeMs"); Set(proactive, values, "proactive");
+            int cents = LocalData.Number(values, "costLimitCents", LocalData.Number(values, "costLimit", 1) * 100);
+            costLimit.Value = Math.Max(costLimit.Minimum, Math.Min(costLimit.Maximum, cents / 100m));
+            stopAtLimit.Checked = LocalData.Flag(values, "stopAtLimit", true);
             Select(aiMode, values, "aiMode");
             localModels.Llm = LocalData.Text(values, "localLlm", localModels.Llm);
             localModels.Whisper = LocalData.Text(values, "localWhisper", localModels.Whisper);
@@ -823,7 +833,7 @@ namespace DebateAI
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { tick.Dispose(); session.Dispose(); localEngine.Dispose(); }
+            if (disposing) { tick.Dispose(); session.Dispose(); localEngine.Dispose(); if (overlay != null) overlay.Dispose(); }
             base.Dispose(disposing);
         }
 
@@ -884,6 +894,55 @@ namespace DebateAI
         }
 
         private static CheckBox Check(string text) { return new CheckBox { Text = text, AutoSize = true, ForeColor = Theme.Text, MaximumSize = new Size(470, 0), Margin = new Padding(3, 4, 3, 4) }; }
+
+        private static NumericUpDown Money(int min, int max, decimal value, decimal step)
+        {
+            return new NumericUpDown { Minimum = min, Maximum = max, Value = value, Increment = step, DecimalPlaces = 2, Width = 80, BackColor = Theme.Field, ForeColor = Theme.Text };
+        }
+
+        // Stream overlay for TikTok LIVE Studio ("Link" source), served only on this PC.
+        private void StartOverlay()
+        {
+            for (int port = OverlayServer.DefaultPort; port < OverlayServer.DefaultPort + 5 && overlay == null; port++)
+            {
+                try { overlay = new OverlayServer(port); }
+                catch (Exception) { }
+            }
+            LocalData.WriteLog(overlay == null ? "Stream-Overlay: kein freier Port" : "Stream-Overlay: " + overlay.Url);
+        }
+
+        private void UpdateOverlay()
+        {
+            if (overlay == null) return;
+            long now = uiClock.ElapsedMilliseconds;
+            if (now - overlayAt < 80) return;
+            overlayAt = now;
+            bool running = !session.ReadyForStart && session.State != Phase.Meter && session.State != Phase.Tone && session.State != Phase.EchoTest;
+            overlay.Update(new OverlayState
+            {
+                Name = string.IsNullOrEmpty(personaName.Text.Trim()) ? "Nova" : personaName.Text.Trim(),
+                Topic = topic.Text.Trim(),
+                Phase = running ? OverlayState.PhaseFor(session.State) : "idle",
+                Level = OverlayState.LevelFromDb(session.NovaLevel),
+                Running = running,
+                Mode = LocalMode ? "lokal" : CloudMode ? "openai" : "offline"
+            });
+        }
+
+        private void ShowOverlay()
+        {
+            if (overlay == null) { MessageBox.Show(this, "Das Overlay konnte nicht gestartet werden (Port belegt). DEBATE AI neu starten.", "Stream-Overlay"); return; }
+            try { Clipboard.SetText(overlay.Url); } catch (Exception) { }
+            if (MessageBox.Show(this, "Link kopiert: " + overlay.Url + "\n\n" +
+                "In TikTok LIVE Studio: Szene „DEBATE AI – NOVA LIVE“ anlegen → Quelle hinzufügen → „Link“ → Link einfügen, Größe 1080 × 1920.\n" +
+                "Die Overlay-Quelle ganz nach unten legen; Kamera oder Gastbild darüber in den Rahmen „GAST“ ziehen.\n" +
+                "Nur Titel, KI-Hinweis und Sprechanzeige (durchsichtig, über der Kamera): " + overlay.Url + "?view=badge\n\n" +
+                "Der Link funktioniert nur auf diesem PC, solange DEBATE AI läuft. Vorschau jetzt im Browser öffnen?",
+                "Stream-Overlay", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            {
+                try { Process.Start(new ProcessStartInfo { FileName = overlay.Url, UseShellExecute = true }); } catch (Exception) { }
+            }
+        }
 
         private static NumericUpDown Number(int min, int max, int value, int step)
         {

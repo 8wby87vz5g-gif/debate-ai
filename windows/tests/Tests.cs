@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -51,6 +52,7 @@ namespace DebateAI
                 Run("Routing-Messung erkennt richtige und falsche Wege", TestRoutingMeasurement);
                 Run("Gastton-Test und LIVE-Studio-Erkennung", TestGuestProbe);
                 Run("Kostenschätzung, Kostenlimit und Gast ausreden lassen", TestCostLimit);
+                Run("Stream-Overlay: lokale Seite, Zustand, Sprechpegel", TestOverlay);
                 Run("Lokal: Resampling, WAV, Satzaufteilung, Whisper-Bereinigung", TestLocalBasics);
                 Run("Lokal: Sicherheitssperre erlaubt nur Dienste auf diesem PC", TestLocalGuard);
                 Run("Lokal: NOVA-Pipeline Spracherkennung → Sprachmodell → Stimme", TestLocalPipeline);
@@ -766,6 +768,44 @@ namespace DebateAI
                 !LiveStudio.IsLiveStudio("obs64"), "LIVE-Studio-Erkennung falsch");
         }
 
+        private static void TestOverlay()
+        {
+            string ok = Encoding.UTF8.GetString(OverlayServer.Respond("GET /nova HTTP/1.1\r\nHost: 127.0.0.1:18190\r\n\r\n", "{}"));
+            Check(ok.StartsWith("HTTP/1.1 200") && ok.Contains("DU GEGEN NOVA") && ok.Contains("KI-Debattenpartnerin · synthetische Stimme") && ok.Contains("text/html"), "Overlay-Seite fehlt");
+            string json = Encoding.UTF8.GetString(OverlayServer.Respond("GET /state?t=1 HTTP/1.1\r\nHost: localhost:18190\r\n\r\n", "{\"phase\":\"speaking\"}"));
+            Check(json.Contains("application/json") && json.EndsWith("{\"phase\":\"speaking\"}") && json.Contains("no-store"), "Overlay-Zustand fehlt");
+            Check(Encoding.UTF8.GetString(OverlayServer.Respond("GET /state HTTP/1.1\r\nHost: evil.example\r\n\r\n", "{}")).StartsWith("HTTP/1.1 403"), "Fremder Host muss abgelehnt werden");
+            Check(Encoding.UTF8.GetString(OverlayServer.Respond("POST /state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n", "{}")).StartsWith("HTTP/1.1 405"), "Nur GET erlaubt");
+            Check(Encoding.UTF8.GetString(OverlayServer.Respond("GET /../../x HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n", "{}")).StartsWith("HTTP/1.1 404"), "Unbekannter Pfad");
+            var state = new OverlayState { Name = "Nova <b>", Topic = "Tempolimit \"jetzt\"", Phase = OverlayState.PhaseFor(Phase.Speaking), Level = OverlayState.LevelFromDb(-20) };
+            var parsed = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(state.ToJson());
+            Check((string)parsed["topic"] == "Tempolimit \"jetzt\"" && (string)parsed["phase"] == "speaking" && Math.Abs(Convert.ToDouble(parsed["level"]) - 0.75) < 1e-6, "Overlay-JSON falsch");
+            Check(OverlayState.PhaseFor(Phase.Recording) == "guest" && OverlayState.PhaseFor(Phase.Idle) == "idle" && OverlayState.LevelFromDb(-90) == 0 && OverlayState.LevelFromDb(0) == 1, "Overlay-Phasen");
+            Check(OverlayPage.Html.Contains("textContent") && !OverlayPage.Html.Contains("innerHTML") && !OverlayPage.Html.Contains("=>") && !OverlayPage.Html.Contains("let ") && !OverlayPage.Html.Contains("const "),
+                "Overlay muss ohne innerHTML und in altem JavaScript geschrieben sein (alter Browser in LIVE Studio)");
+            if (System.IO.File.Exists("overlay/nova.html"))
+                Check(System.IO.File.ReadAllText("overlay/nova.html", Encoding.UTF8).Replace("\r\n", "\n") == OverlayPage.Html, "OverlayPage.cs ist veraltet: tools/embed-overlay.py ausführen");
+            using (var server = new OverlayServer(0))
+            {
+                var update = new OverlayState { Topic = "Smartphones an Schulen", Phase = "listening" };
+                server.Update(update);
+                string page, live;
+                using (var web = new System.Net.WebClient { Encoding = Encoding.UTF8 })
+                {
+                    page = web.DownloadString(server.Url);
+                    live = web.DownloadString("http://127.0.0.1:" + server.Port + "/state");
+                }
+                Check(page.Contains("DU GEGEN NOVA") && live.Contains("Smartphones an Schulen") && live.Contains("listening"), "Overlay-Server antwortet nicht echt über TCP");
+            }
+            using (var rig = new Rig(new SessionOptions { RoutingVerified = true }, true))
+            {
+                rig.Emit(LiveKind.Committed); rig.Tick();
+                byte[] loud = WinAudio.Tone(400, 440);
+                rig.Ai.Sink.Write(loud); rig.Tick();
+                Check(rig.Session.State == Phase.Speaking && rig.Session.NovaLevel > -40, "NOVA-Pegel fehlt beim Sprechen: " + rig.Session.NovaLevel);
+            }
+        }
+
         private static void TestCostLimit()
         {
             var usage = new TokenUsage { AudioIn = 100000, AudioCached = 50000, AudioOut = 10000, TextIn = 20000, TextOut = 1000 };
@@ -786,6 +826,13 @@ namespace DebateAI
                 Check(rig.Session.Fairness, "Fairness sollte an sein");
                 rig.Session.Fairness = false;
                 Check(!rig.Session.Fairness, "Gast ausreden lassen lässt sich nicht umschalten");
+            }
+            using (var rig = new Rig(new SessionOptions { RoutingVerified = true, CostLimit = 0.5, StopAtCostLimit = true }, true))
+            {
+                rig.Ai.Events.Enqueue(new LiveEvent(LiveKind.Usage) { Tokens = new TokenUsage { AudioOut = 30000 } }); rig.Tick();
+                Check(rig.Session.CostLimitReached && rig.Session.Muted, "Limit nicht erkannt");
+                rig.Tick();
+                Check(rig.Session.State == Phase.Idle && rig.Ai.Closed && rig.Session.Note.Contains("vollständig beendet"), "Sitzung wird beim Kostenlimit nicht beendet: " + rig.Session.Note);
             }
         }
 

@@ -1,4 +1,4 @@
-# Testbericht · DEBATE AI 0.6.2
+# Testbericht · DEBATE AI 0.7.0
 
 Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler version 6.8.0.105 (Deb
 
@@ -7,7 +7,7 @@ Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler ver
 | Prüfung | Ergebnis |
 |---|---|
 | Kompilierung als C# 5 ohne Warnungen (Sprachstand des Windows-Compilers) | bestanden |
-| 48 automatische Logik-, Protokoll- und Signaltests (+1 Windows-Test übersprungen) | **48/48 bestanden, 3 Wiederholungen stabil** |
+| 49 automatische Logik-, Protokoll- und Signaltests (+1 Windows-Test übersprungen) | **49/49 bestanden, 3 Wiederholungen stabil** |
 | Oberfläche startet, Anordnung lesbar; Einrichtungsassistent öffnet beim ersten Start (Mono-WinForms auf virtuellem Bildschirm) | bestanden |
 | Website `typecheck` und `build` | bestanden (Stand 0.2.0, unverändert) |
 | Lokale Debatte mit echter OpenAI-API auf deinem Windows-PC | **bestanden laut deinem Bericht** (ca. 1–2 s Reaktionszeit) |
@@ -95,6 +95,7 @@ OK  Voicemeeter: TikTok-Routing-Plan, Anwenden, Rücklesen
 OK  Routing-Messung erkennt richtige und falsche Wege
 OK  Gastton-Test und LIVE-Studio-Erkennung
 OK  Kostenschätzung, Kostenlimit und Gast ausreden lassen
+OK  Stream-Overlay: lokale Seite, Zustand, Sprechpegel
 OK  Lokal: Resampling, WAV, Satzaufteilung, Whisper-Bereinigung
 OK  Lokal: Sicherheitssperre erlaubt nur Dienste auf diesem PC
 OK  Lokal: NOVA-Pipeline Spracherkennung → Sprachmodell → Stimme

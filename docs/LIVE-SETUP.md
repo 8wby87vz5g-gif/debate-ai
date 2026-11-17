@@ -36,6 +36,31 @@ TikTok-Gast ← LIVE-Stream ← LIVE Studio (Mikrofon: Voicemeeter Out B1) ← B
 
 Der Gastton-Test (Schritt 7) zeigt das ehrlich: Kommt bei VAIO nichts an oder hörst du dort auch dich selbst und den Stream, gibt LIVE Studio den Gast nicht getrennt aus. **Unterstützte Alternative:** Den Gast über eine Anruf-App (z. B. Discord, Zoom) zuschalten, deren **Lautsprecher** `Voicemeeter Input` und deren **Mikrofon** `Voicemeeter Out B1` ist. In LIVE Studio bleibt `Voicemeeter Out B1` das Mikrofon; damit das Publikum den Gast hört, in LIVE Studio zusätzlich `Voicemeeter Out B2` als zweite Audioquelle hinzufügen. In Schritt 6 „Stattdessen: Gast über eine Anruf-App“ ankreuzen.
 
+## Szene „DEBATE AI – NOVA LIVE“ (Overlay, ab 0.7.0)
+
+DEBATE AI liefert die Live-Szene selbst aus, nur auf deinem PC (`127.0.0.1`), ohne Internet und ohne TikTok-Zugangsdaten.
+
+![Szene](overlay-szene.png)
+
+1. DEBATE AI starten → „3 · Gesprächssteuerung“ → **Stream-Overlay (Link kopieren)**. Der Link lautet normalerweise `http://127.0.0.1:18190/nova`.
+2. TikTok LIVE Studio → neue **vertikale** Szene „DEBATE AI – NOVA LIVE“ → Quelle hinzufügen → **Link** → Link einfügen → Größe **1080 × 1920**.
+3. Die Link-Quelle **ganz nach unten** legen. Kamera (oder Gast-Fenster) darüber in den Rahmen „GAST“ ziehen.
+4. Alternative ohne Hintergrund: `http://127.0.0.1:18190/nova?view=badge` ist durchsichtig und zeigt nur Titel, KI-Hinweis und Sprechanzeige über der Kamera.
+
+Die Szene zeigt: „DU GEGEN NOVA“, den dauerhaften Hinweis „NOVA · KI-Debattenpartnerin · synthetische Stimme“, das Debattenthema aus DEBATE AI und eine NOVA-Figur, deren Mund und Leuchten **NOVAs echter Ausgabelautstärke** folgen (keine Lippensynchronisation). Status: spricht / denkt nach / hört zu.
+
+Bekannte Grenzen (laut Anbietern anderer Overlays): Die Link-Quelle von LIVE Studio nutzt einen älteren eingebauten Browser, der manchmal einfriert oder die Quelle winzig darstellt. Abhilfe: in den Quelleneigenschaften `?x=1` an den Link anhängen (lädt neu) oder die Quelle löschen und neu hinzufügen. Das Overlay ist deshalb bewusst schlicht programmiert. **In deiner LIVE-Studio-Version ungetestet.**
+
+## Live-Titel und Beschreibung (zum Einfügen)
+
+- Titel: **Traust du dich gegen eine KI? 🤖 | Debattiere LIVE mit NOVA**
+- Beschreibung: *Diskutiere live mit NOVA, unserer künstlichen Intelligenz. Du vertrittst deine Meinung, NOVA antwortet mit eigenen Argumenten. Traust du dich?*
+- Gäste: Mehrgast-/Gast-Anfragen in LIVE Studio erlauben. Profil, Benutzername und Kontoeinstellungen bleiben unverändert.
+
+## Kosten beim ersten Test
+
+Unter „3 · Gesprächssteuerung“: **Kostenlimit** auf z. B. **0,50 $** stellen und **„Bei Kostenlimit OpenAI-Sitzung ganz beenden“** angehakt lassen (Standard). Beim Erreichen schließt DEBATE AI die OpenAI-Verbindung vollständig; es entstehen danach keine weiteren Kosten. Die Kosten sind eine Schätzung aus den von OpenAI gemeldeten Tokens; maßgeblich ist die Abrechnung im OpenAI-Konto. Für reine Audiotests den Modus „Offline-Probe“ oder „Lokal“ verwenden (kostenlos).
+
 ## Während der Live-Debatte
 
 Die Kontrollzeile im Hauptfenster zeigt: ● Eingang (Gastton kommt an) · ● NOVA-Ausgang · ● OpenAI · ● Gast spricht · Echo-Warnung · geschätzte Kosten. Darüber: Latenz der letzten Antwort, Durchschnitt und p95.
