@@ -46,6 +46,8 @@ Zweiter Lauf mit 0.6.2 (NOVA spricht schon nach dem ersten Satzteil; anderer, sc
 | llama3.2:3b | 2,6 s | 3,0 s | 38 |
 | qwen2.5:3b | 3,5 s | 3,8 s | 8 |
 
+Dritter Lauf mit 0.6.2 auf dem langsameren Testrechnertyp (wie Lauf 1): gemma3:1b 4,4 s · qwen2.5:3b 4,2 s · llama3.2:3b 5,1 s · **gemma3:4b 5,5 s (vorher 8,1 s)**.
+
 Die Testrechner schwanken stark (gleiches Modell 5,2 s bzw. 2,6 s). Entscheidend ist deshalb die Messung auf deinem PC.
 
 Zum Vergleich OpenAI Realtime auf deinem PC: ca. 1–2 s. **Der lokale Modus ist deutlich langsamer und inhaltlich einfacher.** Whisper base verhört sich bei Fremdwörtern spürbar („Social Media“ → „Xerl-Midija“). Ein Laptop mit mehr Kernen oder eine NVIDIA-Grafikkarte kann schneller sein; das zeigt erst „Geschwindigkeit messen“ auf deinem PC.
