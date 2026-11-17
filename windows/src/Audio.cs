@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -227,8 +227,14 @@ namespace DebateAI
 
     internal interface IPlayback : IDisposable
     {
+        // Replaces queued audio and starts at once (test tone, disclosure).
         void Play(byte[] pcm);
+        // Streams more audio behind the queued audio (live NOVA answer).
+        void Append(byte[] pcm);
+        // Stops at once and drops queued audio; the device stays open.
+        void Stop();
         bool Finished { get; }
+        int PlayedMs { get; }
     }
 
     internal sealed class WaveCapture : ICapture
@@ -316,11 +322,13 @@ namespace DebateAI
 
     internal sealed class WavePlayback : IPlayback
     {
+        private sealed class Chunk { public WaveBuffer Buffer; public int Ms; }
+
         private IntPtr handle;
-        private WaveBuffer buffer;
         private readonly bool stereo;
-        private readonly Stopwatch elapsed = new Stopwatch();
-        private int expectedMs;
+        private readonly List<Chunk> queue = new List<Chunk>();
+        private readonly Stopwatch progress = new Stopwatch();
+        private int playedMs;
 
         public WavePlayback(uint id)
         {
@@ -335,55 +343,92 @@ namespace DebateAI
             WinAudio.Check(result, "Ausgang öffnen");
         }
 
+        public int PlayedMs { get { Collect(); return playedMs; } }
+
         public void Play(byte[] pcm)
         {
-            ReleaseBuffer();
-            expectedMs = pcm.Length * 1000 / WinAudio.BytesPerSecond;
+            Stop();
+            playedMs = 0;
+            Append(pcm);
+        }
+
+        public void Append(byte[] pcm)
+        {
+            if (pcm == null || pcm.Length < 2) return;
+            Collect();
             byte[] data = stereo ? WinAudio.ToStereo48(pcm) : pcm;
-            buffer = new WaveBuffer(data.Length);
-            buffer.Fill(data);
-            WinAudio.Check(WinAudio.waveOutPrepareHeader(handle, buffer.Pointer, WinAudio.HeaderSize), "Ausgang vorbereiten");
-            buffer.Prepared = true;
-            WinAudio.Check(WinAudio.waveOutWrite(handle, buffer.Pointer, WinAudio.HeaderSize), "Wiedergabe starten");
-            elapsed.Restart();
+            var chunk = new Chunk { Buffer = new WaveBuffer(data.Length), Ms = pcm.Length * 1000 / WinAudio.BytesPerSecond };
+            try
+            {
+                chunk.Buffer.Fill(data);
+                WinAudio.Check(WinAudio.waveOutPrepareHeader(handle, chunk.Buffer.Pointer, WinAudio.HeaderSize), "Ausgang vorbereiten");
+                chunk.Buffer.Prepared = true;
+                WinAudio.Check(WinAudio.waveOutWrite(handle, chunk.Buffer.Pointer, WinAudio.HeaderSize), "Wiedergabe starten");
+            }
+            catch
+            {
+                Release(chunk);
+                throw;
+            }
+            if (queue.Count == 0) progress.Restart();
+            queue.Add(chunk);
+        }
+
+        public void Stop()
+        {
+            if (handle == IntPtr.Zero) return;
+            if (queue.Count != 0) WinAudio.waveOutReset(handle);
+            Exception first = null;
+            foreach (Chunk chunk in queue)
+            {
+                try { Release(chunk); }
+                catch (Exception error) { if (first == null) first = error; }
+            }
+            queue.Clear();
+            if (first != null) throw first;
         }
 
         public bool Finished
         {
             get
             {
-                if (buffer == null) return true;
-                if ((buffer.Read().Flags & WinAudio.Done) == 0)
-                {
-                    if (elapsed.ElapsedMilliseconds > expectedMs + 3000)
-                        throw new AppError("Der Ausgang meldet kein Wiedergabeende. Gerät prüfen.");
-                    return false;
-                }
-                ReleaseBuffer();
-                return true;
+                Collect();
+                if (queue.Count == 0) return true;
+                if (progress.ElapsedMilliseconds > queue[0].Ms + 3000)
+                    throw new AppError("Der Ausgang meldet kein Wiedergabeende. Gerät prüfen.");
+                return false;
             }
         }
 
-        private void ReleaseBuffer()
+        // Frees played chunks in order. WinMM plays buffers strictly in sequence.
+        private void Collect()
         {
-            if (buffer == null) return;
-            if (buffer.Prepared)
+            while (queue.Count != 0 && (queue[0].Buffer.Read().Flags & WinAudio.Done) != 0)
             {
-                if ((buffer.Read().Flags & WinAudio.Done) == 0) WinAudio.waveOutReset(handle);
-                WinAudio.Check(WinAudio.waveOutUnprepareHeader(handle, buffer.Pointer, WinAudio.HeaderSize), "Ausgangspuffer freigeben");
+                Chunk chunk = queue[0];
+                queue.RemoveAt(0);
+                playedMs += chunk.Ms;
+                progress.Restart();
+                Release(chunk);
             }
-            buffer.Free();
-            buffer = null;
+        }
+
+        private void Release(Chunk chunk)
+        {
+            if (chunk.Buffer.Prepared)
+            {
+                chunk.Buffer.Prepared = false;
+                WinAudio.Check(WinAudio.waveOutUnprepareHeader(handle, chunk.Buffer.Pointer, WinAudio.HeaderSize), "Ausgangspuffer freigeben");
+            }
+            chunk.Buffer.Free();
         }
 
         public void Dispose()
         {
             if (handle == IntPtr.Zero) return;
-            uint reset = WinAudio.waveOutReset(handle);
             uint close = 0;
-            try { ReleaseBuffer(); }
+            try { Stop(); }
             finally { close = WinAudio.waveOutClose(handle); handle = IntPtr.Zero; }
-            WinAudio.Check(reset, "Ausgang stoppen");
             WinAudio.Check(close, "Ausgang schließen");
         }
     }

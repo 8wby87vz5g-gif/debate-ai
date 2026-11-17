@@ -1,8 +1,10 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Web.Script.Serialization;
 
 namespace DebateAI
 {
@@ -11,6 +13,8 @@ namespace DebateAI
         public static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DebateAI");
         private static readonly string SecretFile = Path.Combine(Folder, "api-key.dpapi");
         public static readonly string LogFile = Path.Combine(Folder, "debate-ai.log");
+        // Non-secret preferences only. The API key never goes into this file.
+        public static readonly string SettingsFile = Path.Combine(Folder, "settings.json");
 
         public static bool HasKey { get { return File.Exists(SecretFile); } }
 
@@ -73,6 +77,56 @@ namespace DebateAI
             }
             catch (IOException) { return false; }
             catch (UnauthorizedAccessException) { return false; }
+        }
+
+        public static void SaveSettings(Dictionary<string, object> values)
+        {
+            try
+            {
+                Directory.CreateDirectory(Folder);
+                string temp = SettingsFile + ".tmp";
+                File.WriteAllText(temp, new JavaScriptSerializer().Serialize(values), Encoding.UTF8);
+                if (File.Exists(SettingsFile)) File.Delete(SettingsFile);
+                File.Move(temp, SettingsFile);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        public static Dictionary<string, object> LoadSettings()
+        {
+            try
+            {
+                if (!File.Exists(SettingsFile)) return new Dictionary<string, object>();
+                var values = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(SettingsFile, Encoding.UTF8));
+                return values ?? new Dictionary<string, object>();
+            }
+            catch (Exception) { return new Dictionary<string, object>(); }
+        }
+
+        public static string Text(Dictionary<string, object> values, string name, string fallback)
+        {
+            object value;
+            return values.TryGetValue(name, out value) && value is string ? (string)value : fallback;
+        }
+
+        public static int Number(Dictionary<string, object> values, string name, int fallback)
+        {
+            object value;
+            return values.TryGetValue(name, out value) && value is int ? (int)value : fallback;
+        }
+
+        public static bool Flag(Dictionary<string, object> values, string name, bool fallback)
+        {
+            object value;
+            return values.TryGetValue(name, out value) && value is bool ? (bool)value : fallback;
+        }
+
+        // Deletes everything this app stored locally: key, settings and logs.
+        public static void DeleteAll()
+        {
+            foreach (string file in new[] { SecretFile, SettingsFile, LogFile, LogFile + ".1" })
+                if (File.Exists(file)) File.Delete(file);
         }
     }
 }

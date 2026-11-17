@@ -1,31 +1,55 @@
 # DEBATE AI für Windows
 
-**MVP 0.1.2 · Nova, deutsche KI-Debattenpartnerin mit synthetischer Stimme**
+**Version 0.2.0 · NOVA, KI-Debattenpartnerin mit synthetischer Stimme**
 
-## 1. In fünf Minuten zur Offline-Probe
+> Neu in 0.2.0: NOVA antwortet im Automatikmodus selbstständig und beginnt zu sprechen, sobald die ersten Antwortteile da sind. Details stehen in `CHANGELOG.md`, der Prüfstand in `docs/STATUS.md`.
 
-1. Entpacke die gesamte ZIP-Datei und öffne `DEBATE-AI.exe`. Die App läuft unter Windows mit .NET Framework 4.8 oder 4.8.1. `DEBATE-AI.exe.config` bleibt neben der EXE. Für die App sind weder Administratorrechte noch Python, Node oder zusätzliche Programmbibliotheken nötig.
-2. Wähle für die erste Probe dein Mikrofon als **Eingang** und deinen Kopfhörer als **Ausgang**. Wähle **Testton**. Der Ton soll nur am ausgewählten Ausgang ankommen.
-3. Wähle **Pegel prüfen** und sprich einen Satz. Der Eingangspegel soll reagieren. Bei Stille sollte er unter der eingestellten Schwelle liegen. Beende den Pegeltest mit **Stopp**.
-4. Lass **Offline-Probe mit Antwortton** aktiv. Wähle **Push-to-test**, klicke **Start** und warte auf **Bereit für den Gast**. Klicke **Aufnahme starten**, sprich einen Satz und klicke **Beitrag senden**. Ein Antwortton bestätigt die Verarbeitung des Beitrags und die Ausgabe. Für diese Probe bleiben alle Daten auf dem Rechner.
-5. Teste **Pause** während des Antworttons. Die Wiedergabe soll sofort stoppen. **Fortsetzen** öffnet eine neue Sitzung. **Not-Aus (Esc)** beendet die Sitzung, gibt beide Geräte frei und verwirft eine noch laufende Antwort. Die Esc-Taste wirkt, wenn das Fenster aktiv ist. Prüfe für die Live-Probe zusätzlich die Stummschaltung des KI-Mikrofons in LIVE Studio.
+## 0. Installation
 
-## 2. Erste deutsche KI-Debatte
+- **Installer:** `DEBATE-AI-Setup-0.2.0.exe` ausführen. Es sind keine Administratorrechte nötig; die App landet unter `%LOCALAPPDATA%\Programs\DEBATE AI` und im Startmenü.
+- **Ohne Installer:** `DEBATE-AI-portable.zip` entpacken und `DEBATE-AI.exe` starten (`DEBATE-AI.exe.config` muss daneben liegen).
+- **Selbst bauen:** `Neu-bauen.cmd` ausführen (nutzt den in Windows enthaltenen C#-Compiler von .NET Framework 4.8), danach `Selbsttest.cmd`.
+- **Systemanforderungen:** Windows 10 (ab 1903) oder Windows 11, .NET Framework 4.8 (bereits enthalten), Internetverbindung, ein OpenAI-API-Projekt mit Realtime-Zugriff und Guthaben.
+- **SmartScreen:** Solange der Installer nicht code-signiert ist, zeigt Windows „Der Computer wurde durch Windows geschützt“. Über „Weitere Informationen → Trotzdem ausführen“ geht es weiter. Für den Verkauf wird ein Code-Signing-Zertifikat benötigt (siehe `docs/STATUS.md`).
 
-1. Erstelle einen Schlüssel in einem [OpenAI-API-Projekt](https://platform.openai.com/api-keys), das für Realtime freigeschaltet ist. Die Nutzung wird über das API-Projekt abgerechnet. Gib den Schlüssel unter **API-Schlüssel** direkt in der Windows-App ein.
-2. Entferne den Haken bei **Offline-Probe**. Informiere alle Sprecher darüber, dass Nova eine KI ist, und dass die App ihre erkannten Beiträge an OpenAI sendet. Lass sie zustimmen und aktiviere das Bestätigungsfeld. Für einen Stream verwende zusätzlich einen dauerhaft sichtbaren Text wie **„Nova · KI-Debattenpartnerin · synthetische Stimme“** und die passende TikTok-Kennzeichnung, falls sie in deinem LIVE-Setup angeboten wird.
-3. Wähle zunächst **Push-to-test** und klicke **Start**. Nach dem Verbindungsaufbau spielt die App Novas gesprochenen KI-Hinweis ab. Sobald **Bereit für den Gast** angezeigt wird, teste etwa „Schulunterricht sollte morgens später beginnen, weil Jugendliche mehr Schlaf brauchen.“ Nova soll auf Deutsch mit einem kurzen Einwand oder einer gezielten Rückfrage antworten. Greife die Antwort im nächsten Beitrag auf und prüfe, ob Nova den Zusammenhang behält.
-4. Stoppe die Sitzung. Wähle **Automatisch** und starte erneut. Ein Beitrag beginnt nach ungefähr 120 ms ausreichend lautem Eingangssignal. Im Fairness-Modus beendet eine Pause von ungefähr 1,2 Sekunden den Beitrag. Die einstellbare Redezeit (5–60 Sekunden, Standard 12) begrenzt Aufnahme und KI-Debattenantwort. Überschreitet der Gast das Limit vor einer Pause, verwirft Nova die Aufnahme und wartet auf Ruhe. Ist Fairness ausgeschaltet, gelten rund 760 ms und bei Erreichen der Redezeit wird der aufgezeichnete Teil gesendet. Der Realtime-Audiopuffer hat unabhängig davon ein 30-Sekunden-Sicherheitslimit für die KI-Ausgabe. Nach der Antwort hält die App den Eingang standardmäßig weitere 900 ms gesperrt. Warte für deinen nächsten Beitrag auf **Bereit für den Gast**.
-5. Miss die Zeit zwischen dem Ende der Aussage und dem Beginn der Antwort. Das Protokoll enthält die Zeit von der Übermittlung bis zum Eintreffen der vollständigen Antwort. Die App puffert eine vollständige KI-Antwort, bevor sie spricht. Die hörbare Verzögerung umfasst daher auch Sprechpausenerkennung, Netzwerk, Modell und Audioausgabe.
+## 1. Erste Probe ohne KI (Offline-Probe)
 
-**Pegel einstellen.** Die Schwelle startet bei −40 dBFS. Spricht der Gast leise, senke den Wert zum Beispiel auf −48 dBFS. Löst Raumrauschen aus, erhöhe ihn zum Beispiel auf −32 dBFS und prüfe zuerst, ob Musik oder Desktop-Ton versehentlich auf dem Eingang liegen. Die Erkennung reagiert auf Lautstärke und Sprechpausen. Sie kann Sprache, Musik und andere laute Signale nicht zuverlässig unterscheiden. Push-to-test ist für die Erstprobe der einfachere Kontrollpunkt.
+1. Wähle unter **1 · Audio** dein Mikrofon als **Eingang** und deinen Kopfhörer als **Ausgang**.
+2. **Testton**: Der Ton soll nur am gewählten Ausgang ankommen.
+3. **Pegel prüfen** und einen Satz sprechen: Pegel und Wellenform reagieren. Bei Stille liegt der Pegel unter der Schwelle (Standard −40 dBFS).
+4. Haken **Offline-Probe** setzen und **Debatte starten**. Sprich einen Satz und mache eine Pause: Ein Piepton bestätigt, dass Aufnahme, Sprecherwechsel und Ausgabe funktionieren.
 
+**Wichtig:** Solange die Offline-Probe aktiv ist, antwortet NOVA **nur mit einem Piepton**, nie mit Sprache. Die App zeigt das gelb an. Das war in 0.1.x die Werkseinstellung und eine Hauptursache für „NOVA hört, antwortet aber nicht“.
 
-### Moderieren
+## 2. Erste echte Debatte mit NOVA
 
-- **Fairness-Modus** ist beim Start aktiv. Wenn der Gast während der Berechnung weiterspricht und die Pause noch zu kurz ist, spielt Nova die vorbereitete Antwort nicht ab. Die Pegelerkennung ist eine Heuristik. Prüfe sie mit der tatsächlichen Stimme und Geräuschkulisse.
-- **Ruhe in der Debatte** schließt die aktuelle KI-Sitzung und gibt dem Gast das Wort. Der Hinweis ist im Fenster sichtbar. Wenn Nova gerade spricht, stoppt ihre Wiedergabe. Klicke erst nach dem Gastbeitrag auf **Fortsetzen**. Dabei öffnet sich eine frische Sitzung mit neuer KI-Kennzeichnung.
-- **Not-Aus** beendet die gesamte KI-Sitzung. Die Esc-Taste wirkt bei aktivem Fenster. In LIVE Studio ist die Stummschaltung der B1-Quelle die zweite Abschaltmöglichkeit. Der Gastbus wird von der App nicht stummgeschaltet.
+1. **API-Schlüssel hinterlegen** (OpenAI-Projekt mit Realtime-Freigabe). Der Schlüssel wird mit Windows-DPAPI verschlüsselt nur für dein Benutzerkonto gespeichert. Danach wird die Offline-Probe automatisch ausgeschaltet.
+2. Unter **2 · NOVA-Persönlichkeit** Stil, Intensität, Antwortlänge, Stimme, Sprache und optional Thema und NOVAs Position wählen.
+3. Alle Sprecher informieren, dass NOVA eine KI ist und ihre Beiträge an OpenAI gehen, und die Einwilligung bestätigen.
+4. **Sprecherwechsel: Automatisch** (Standard) und **Debatte starten**. NOVA spricht zuerst ihren KI-Hinweis.
+5. Sprich einen Satz, z. B. „Schulunterricht sollte morgens später beginnen.“ Nach einer Sprechpause (Standard 1,2 s) zeigt die App **NOVA denkt nach** und dann **NOVA spricht**. Mit eingeschalteter Live-Mitschrift erscheinen deine Worte und NOVAs Antwort rechts im Fenster.
+
+### Die Bedienknöpfe
+
+| Knopf | Wirkung |
+|---|---|
+| **Debatte starten / Fortsetzen** | Öffnet Geräte und eine neue OpenAI-Sitzung. |
+| **Pause** | Beendet die Sitzung; „Fortsetzen“ startet eine neue Sitzung mit frischem Kontext. |
+| **Jetzt antworten** | Beendet den laufenden Beitrag sofort und lässt NOVA antworten, ohne auf die Pause zu warten. Im Push-to-talk-Modus heißt er „Aufnahme starten“. |
+| **NOVA unterbrechen** | Stoppt NOVA sofort. Im Gesprächskontext bleibt nur der Teil, der tatsächlich zu hören war. |
+| **Ruhe in der Debatte** | Schließt die KI-Sitzung; der Gast hat das Wort, bis du fortsetzt. |
+| **Not-Aus (Esc)** | Beendet alles und gibt beide Audiogeräte frei. |
+
+### Sprecherwechsel und „ausreden lassen“
+
+- Ein Beitrag beginnt nach etwa 120 ms Signal über der Schwelle und endet nach der eingestellten **Sprechpause**.
+- **Max. Redezeit** (Standard 30 s): Spricht jemand länger ohne Pause, wird der Beitrag an dieser Stelle **gesendet** (in 0.1.x wurde er verworfen, sodass NOVA bei durchgehend laufenden Videos nie antwortete).
+- **Gesprächspartner ausreden lassen (Fairness):** Ist NOVAs Antwort fertig, während noch jemand spricht, wartet sie bis zu 6 s auf eine Pause. Spricht die Person weiter (mehr als 0,6 s Sprache), verwirft NOVA ihre noch ungehörte Antwort, hört weiter zu und beantwortet danach beides zusammen. Kein Beitrag geht verloren.
+- **Bei Videos oder Streams ohne Pausen** Fairness ausschalten. NOVA antwortet dann nach jedem Beitrag sofort.
+- Während NOVA spricht und in der Nachlaufzeit (Standard 900 ms) ist der Eingang gesperrt (**Echo-Schutz**). Was in dieser Zeit gesagt wird, hört NOVA nicht. Mit **NOVA unterbrechen** gibst du sofort das Wort zurück.
+
+**Pegel einstellen.** Spricht der Gast leise, die Schwelle z. B. auf −48 dBFS senken. Löst Raumrauschen aus, auf z. B. −32 dBFS erhöhen. Die Erkennung reagiert auf Lautstärke und kann Sprache nicht von Musik unterscheiden.
+
 ## 3. Voicemeeter Banana und TikTok LIVE Studio
 
 Installiere [Voicemeeter Banana vom Hersteller](https://vb-audio.com/Voicemeeter/banana.htm), starte Windows nach der Installation neu und öffne Banana. Wähle oben rechts bei **A1** deinen Kopfhörer. Die Namen der virtuellen Geräte unterscheiden sich je nach Treiberversion. Im Windows-Aufnahmedialog heißt **B1** z. B. `Voicemeeter Out B1` oder `Voicemeeter Output`. **B2** heißt z. B. `Voicemeeter Out B2` oder `Voicemeeter AUX Output`. [Virtuelle Geräte und Busse laut VB-Audio](https://voicemeeter.com/quick-tips-voicemeeter-virtual-inputs-and-outputs-windows-10-and-up/).
@@ -64,25 +88,25 @@ Wenn beim KI-Test auch B2 ausschlägt, stoppe und korrigiere zuerst die Bus-Scha
 ## 5. Architektur und Daten
 
 ```text
-WinMM-Eingang → PCM 24 kHz mono → lokaler Pegel / Turn-Erkennung
-                                    ↓ abgeschlossener Beitrag
-                       OpenAI Realtime über WSS, gpt-realtime-2.1-mini
-                                    ↓ vollständige Antwort im RAM
-WinMM-Ausgang ← PCM-Wiedergabe ← Antwort + Eingangssperre + Nachlauf
+WinMM-Eingang → PCM 24 kHz mono → Pegel / Sprecherwechsel (lokal)
+                                   ↓ abgeschlossener Beitrag
+                    OpenAI Realtime (WebSocket), gpt-realtime-2.1-mini
+                                   ↓ Antwort-Audio als Stream
+WinMM-Ausgang ← Wiedergabe ab ca. 240 ms Puffer ← Eingangssperre + Nachlauf
 ```
 
-- **Audio.** Ein- und Ausgabe werden explizit gewählt. Die App nutzt WinMM, versucht für die Windows-Geräte zuerst 48 kHz und konvertiert für OpenAI in 24 kHz Mono. Die App arbeitet abwechselnd in beide Richtungen. Was während der KI-Ausgabe oder der Nachlaufzeit gesagt wird, wird verworfen. Antworten können per Pause oder Stopp unterbrochen werden. Während einer Sitzung behält das Modell Gesprächskontext. Fortsetzen startet mit frischem Kontext. Für längere Gespräche muss die begrenzte Realtime-Sitzung neu geöffnet werden. [OpenAI Realtime – Gesprächsablauf](https://developers.openai.com/api/docs/guides/realtime-conversations).
-- **Netzwerk.** Im Cloud-Modus gehen abgeschlossene Audio-Beiträge direkt an OpenAI. Die Ausgabe nutzt eine synthetische Standardstimme. Der Einstiegshinweis wird aus einem festen Text erzeugt und nur abgespielt, wenn das vom Modell gelieferte Transkript zum Text passt. Der sichtbare Hinweis im Stream bleibt Aufgabe des Hosts. [OpenAI-Modell](https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini) · [OpenAI-Datenverarbeitung](https://developers.openai.com/api/docs/guides/your-data) · [TikTok-Hilfe zu KI-Inhalten](https://support.tiktok.com/en/using-tiktok/creating-videos/ai-generated-content).
-- **Schlüssel.** `%LOCALAPPDATA%\DebateAI\api-key.dpapi` enthält den per Windows DPAPI für das aktuelle Benutzerkonto verschlüsselten Schlüssel. **API-Schlüssel ändern → Schlüssel löschen** entfernt die lokale Kopie. Im OpenAI-Dashboard lässt sich der Schlüssel widerrufen.
-- **Protokoll.** **Protokollordner** öffnet `%LOCALAPPDATA%\DebateAI`. `debate-ai.log` und bei Rotation `debate-ai.log.1` enthalten Zeit, Status, Laufzeiten, Beitragsdauer, Fehlerklassen und die verfügbaren Audio-/Text-Tokenzahlen. Fehlende und abgebrochene Antworten können in der API-Abrechnung erscheinen. Vergleiche die Logs mit dem Anbieter-Dashboard. Audio und Transkripte werden von dieser App nicht auf Datenträger geschrieben. Die Dateien enthalten keine Schlüssel.
-- **Fehler und Neustart.** Prüfe bei stummem Eingang die Windows-Mikrofonberechtigung für Desktop-Apps und die Geräteauswahl. Meldet die App aufgebrauchtes API-Guthaben, prüfe die [OpenAI-API-Abrechnung](https://platform.openai.com/settings/organization/billing/overview) oder verwende einen Schlüssel aus einem API-Projekt mit Guthaben. Bei anderen OpenAI-Fehlern prüfe Schlüssel, Modellzugriff und Netzwerk. Bei einem Geräte- oder Netzwerkfehler stoppt die Sitzung. Klicke nach der Korrektur auf **Start**. Falls Windows beim Stoppen die Freigabe eines Audiogeräts verweigert, schalte die KI-Quelle im Mixer stumm und starte die App neu.
+- **Audio:** Ein- und Ausgang werden ausdrücklich gewählt; WinMM mit 48 kHz (Fallback 24 kHz), Umrechnung auf 24 kHz mono. Halbduplex: Während NOVA spricht, wird der Eingang verworfen.
+- **Kontext:** Innerhalb einer Sitzung behält das Modell den Gesprächsverlauf. Ungehörte Antworten werden aus dem Verlauf gelöscht, unterbrochene auf den gehörten Teil gekürzt. „Fortsetzen“ startet mit frischem Kontext.
+- **Mitschrift:** Optional über `gpt-4o-mini-transcribe` (zusätzliche Kosten). Sie bleibt nur im Arbeitsspeicher und wird nie auf die Festplatte geschrieben.
+- **Schlüssel:** `%LOCALAPPDATA%\DebateAI\api-key.dpapi`, DPAPI-verschlüsselt für das aktuelle Benutzerkonto.
+- **Einstellungen:** `%LOCALAPPDATA%\DebateAI\settings.json` (nur Einstellungen, kein Schlüssel, keine Gesprächsinhalte).
+- **Protokoll:** `debate-ai.log` mit Status, Laufzeiten, Beitragsdauer, Fehlerklassen und Tokenzahlen; keine Audiodaten, keine Transkripte, keine Schlüssel.
+- **Lokale Daten löschen:** Der gleichnamige Knopf entfernt Schlüssel, Einstellungen und Protokolle dieser App.
+- **Hinweis für den Verkauf:** In dieser Version nutzt jeder Kunde seinen eigenen OpenAI-Schlüssel. Für Abos wird ein Server benötigt, der kurzlebige Sitzungsschlüssel ausgibt (siehe `docs/STATUS.md`, Phase 6).
 
 ## 6. Projektdateien und lokale Prüfung
 
-- `DEBATE-AI.exe` und `DEBATE-AI.exe.config` bilden die startfertige App.
-- `src/MainForm.cs` enthält die Bedienoberfläche, `src/Audio.cs` die Windows-Geräte, `src/Turns.cs` die Sprechlogik, `src/Realtime.cs` den OpenAI- und Offline-Modus und `src/LocalData.cs` Schlüssel und Protokoll.
-- `Neu-bauen.cmd` erzeugt die EXE mit dem mit Windows/.NET Framework bereitgestellten C#-Compiler. Beende eine geöffnete App vor dem Neubau.
-- `Selbsttest.cmd` kompiliert und startet die Tests aus `tests/Tests.cs`. Die Tests verwenden erzeugte Audiosignale und simulierte Realtime-Ereignisse. Sie brauchen weder einen API-Schlüssel noch ein TikTok-Konto. Am Ende melden sie die gefundenen Windows-Geräte.
-
-Der lokale Selbsttest prüft die Audiokonvertierung, die Sprechpausenerkennung, die Eingangssperre, manuelle Beiträge, das Verwerfen verspäteter Antworten, Wiederanlauf, Realtime-Ereignisse, DPAPI und den Windows-Fensteraufbau. Ein zusätzlicher Windows-Gerätetest hat am vorhandenen Eingang 24-kHz-Frames verarbeitet und am vorhandenen Ausgang stumme Wiedergabe gestartet, bis zum Ende laufen lassen und in einem zweiten Durchlauf abgebrochen. Die Abnahme einer echten deutschen Cloud-Antwort und des Gast-Routings in LIVE Studio erfolgt nach den Schritten oben mit deinem API-Projekt, deiner Studio-Version und den installierten virtuellen Geräten.
-
+- `src/MainForm.cs` Oberfläche · `src/Turns.cs` Gesprächssteuerung · `src/Realtime.cs` OpenAI Realtime und Offline-Modus · `src/Persona.cs` Persönlichkeiten · `src/Audio.cs` Windows-Audio · `src/LocalData.cs` Schlüssel, Einstellungen, Protokoll.
+- `Neu-bauen.cmd` baut `DEBATE-AI.exe`, `Selbsttest.cmd` baut und startet `tests/Tests.cs` (simulierte Audiosignale und Realtime-Ereignisse; kein API-Schlüssel nötig).
+- `installer/DebateAI.iss` erzeugt den Installer mit Inno Setup 6.
+- Hardware- und Live-Abnahme: `docs/HARDWARE-TEST.md`.

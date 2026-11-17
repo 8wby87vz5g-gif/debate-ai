@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +19,7 @@ namespace DebateAI
         public int EndSilenceMs { get; set; }
         public int MaximumTurnMs { get; set; }
         public bool ReachedLimit { get; private set; }
+        public int VoiceMs { get { return Recording ? voiceMs : 0; } }
 
         public TurnDetector() { EndSilenceMs = 760; MaximumTurnMs = 12000; }
 
@@ -87,29 +88,58 @@ namespace DebateAI
 
     internal enum Phase { Idle, Paused, Moderated, Meter, Tone, Connecting, Listening, Recording, Thinking, Speaking, Cooldown, WaitingForQuiet }
 
-    // All state and device access belongs to the WinForms thread. Network work is awaited.
+    internal sealed class SessionOptions
+    {
+        public bool Automatic = true;
+        public double Threshold = -40;
+        public int GuardMs = 900;
+        // Fairness: NOVA lets the partner finish. A ready answer waits for a pause, and if
+        // the partner keeps talking, the unheard answer is dropped and the new words are queued.
+        public bool Fairness = true;
+        public int TurnSeconds = 30;
+        public int PauseMs;   // 0 = default (1200 ms with fairness, 760 ms without)
+    }
+
+    // All state and device access belongs to the WinForms thread. Network work is awaited;
+    // streamed answer audio arrives through a thread-safe AudioSink and is pumped in Tick.
     internal sealed class DebateSession : IDisposable
     {
+        public const int StartBufferMs = 240;
+        public const int MaximumHoldMs = 6000;
+        public const int MaximumRequeues = 2;
+        // Speech needed while NOVA thinks before her unheard answer is dropped (a cough is not enough).
+        public const int RequeueVoiceMs = 600;
+
         private readonly TurnDetector detector = new TurnDetector();
         private readonly Func<long> milliseconds;
         private ICapture capture;
         private IPlayback playback;
         private IDebater debater;
         private CancellationTokenSource lifetime;
-        private long listenAfter;
-        private int cooldownMs;
-        private bool automatic;
-        private bool fairness;
+        private SessionOptions options = new SessionOptions();
+        private AudioSink sink;
+        private Task replyTask;
+        private bool replyDone, owesAnswer;
+        private Exception replyError;
+        private int turn, droppedTurn = -1, requeues;
+        private long listenAfter, holdUntil;
         private int quietMs;
 
         public event Action Changed = delegate { };
         public event Action<string> Log = delegate { };
+        // Transcript lines (speaker, text). Kept in memory only, never written to disk.
+        public event Action<string, string> Line = delegate { };
         public Phase State { get; private set; }
         public string Note { get; private set; }
         public double Level { get; private set; }
+        public int Answers { get; private set; }
         public bool ReadyForStart { get { return State == Phase.Idle || State == Phase.Paused || State == Phase.Moderated; } }
         public bool CanModerate { get { return !ReadyForStart && State != Phase.Meter && State != Phase.Tone; } }
-        public bool CanPush { get { return !automatic && (State == Phase.Listening || State == Phase.Recording); } }
+        public bool CanPush
+        {
+            get { return options.Automatic ? State == Phase.Recording : State == Phase.Listening || State == Phase.Recording; }
+        }
+        public bool CanInterrupt { get { return State == Phase.Speaking || State == Phase.Thinking || State == Phase.WaitingForQuiet; } }
 
         public DebateSession(Func<long> milliseconds)
         {
@@ -117,19 +147,26 @@ namespace DebateAI
             Level = -90;
         }
 
-        public async Task Start(Func<ICapture> openInput, Func<IPlayback> openOutput, Func<IDebater> create,
+        public Task Start(Func<ICapture> openInput, Func<IPlayback> openOutput, Func<IDebater> create,
             bool automaticMode, double threshold, int guardMs, bool fairnessMode = true, int turnSeconds = 12)
         {
+            return Start(openInput, openOutput, create, new SessionOptions
+            {
+                Automatic = automaticMode, Threshold = threshold, GuardMs = guardMs, Fairness = fairnessMode, TurnSeconds = turnSeconds
+            });
+        }
+
+        public async Task Start(Func<ICapture> openInput, Func<IPlayback> openOutput, Func<IDebater> create, SessionOptions settings)
+        {
             if (!ReadyForStart) return;
+            options = settings ?? new SessionOptions();
             detector.Reset();
-            detector.Threshold = threshold;
-            detector.MaximumTurnMs = Math.Max(5, Math.Min(60, turnSeconds)) * 1000;
-            detector.EndSilenceMs = fairnessMode ? 1200 : 760;
-            fairness = fairnessMode;
-            automatic = automaticMode;
-            cooldownMs = guardMs;
+            detector.Threshold = options.Threshold;
+            detector.MaximumTurnMs = Math.Max(5, Math.Min(120, options.TurnSeconds)) * 1000;
+            detector.EndSilenceMs = options.PauseMs > 0 ? Math.Max(300, Math.Min(3000, options.PauseMs)) : options.Fairness ? 1200 : 760;
             lifetime = new CancellationTokenSource();
             CancellationToken token = lifetime.Token;
+            replyTask = null; sink = null; replyDone = false; replyError = null; requeues = 0; Answers = 0; owesAnswer = false;
             Set(Phase.Connecting, "Audiogeräte und Sitzung werden geöffnet …");
             try
             {
@@ -139,7 +176,14 @@ namespace DebateAI
                 byte[] intro = await debater.Start(token);
                 if (token.IsCancellationRequested) return;
                 if (debater.LastUsage != null) Log(debater.LastUsage);
-                if (intro != null) Speak(intro, "Nova spricht den KI-Hinweis.");
+                TakeLines();
+                if (intro != null && intro.Length != 0)
+                {
+                    sink = new AudioSink();
+                    replyDone = true;
+                    playback.Play(intro);
+                    Set(Phase.Speaking, "Nova spricht den KI-Hinweis.");
+                }
                 else EnterCooldown();
             }
             catch (Exception error) { if (!token.IsCancellationRequested) Fail(error); }
@@ -170,6 +214,7 @@ namespace DebateAI
             catch (Exception error) { Fail(error); }
         }
 
+        // Manual mode: start/stop recording. Automatic mode: "Jetzt antworten" sends the running turn.
         public Task Push()
         {
             if (!CanPush) return Task.FromResult(0);
@@ -184,53 +229,142 @@ namespace DebateAI
             return Task.FromResult(0);
         }
 
+        // "NOVA unterbrechen": stops NOVA at once and gives the floor back to the partner.
+        public void Interrupt()
+        {
+            if (!CanInterrupt) return;
+            try
+            {
+                int played = State == Phase.Speaking ? playback.PlayedMs : -1;
+                playback.Stop();
+                if (debater != null) debater.Cancel(played);
+                droppedTurn = turn;
+                owesAnswer = false;
+                detector.Reset();
+                sink = null;
+                Log("Unterbrochen nach " + Math.Max(0, played) + " ms");
+                EnterCooldown("NOVA wurde unterbrochen. Der Gesprächspartner hat das Wort.");
+            }
+            catch (Exception error) { Fail(error); }
+        }
+
         public async Task Tick()
         {
             try
             {
+                TakeLines();
                 bool endTurn = false;
                 if (capture != null)
                 {
+                    bool listenWhileThinking = options.Automatic && options.Fairness &&
+                        (State == Phase.Thinking || State == Phase.WaitingForQuiet);
                     if (State == Phase.Meter || State == Phase.Listening || State == Phase.Recording)
                     {
                         capture.Drain(frame =>
                         {
                             Level = TurnDetector.Level(frame);
-                            if (State != Phase.Meter && !endTurn) endTurn = detector.Add(frame, Level, automatic);
+                            if (State != Phase.Meter && !endTurn) endTurn = detector.Add(frame, Level, options.Automatic);
                         });
                         if (State == Phase.Listening && detector.Recording)
-                            Set(Phase.Recording, "Gast spricht. Die KI wartet auf eine Sprechpause.");
+                            Set(Phase.Recording, "Gesprächspartner spricht. NOVA hört zu und wartet auf eine Sprechpause.");
                     }
-                    else if (State == Phase.WaitingForQuiet || (State == Phase.Thinking && fairness && automatic))
-                        capture.Drain(ObserveQuiet);
+                    else if (listenWhileThinking)
+                    {
+                        capture.Drain(frame =>
+                        {
+                            ObserveQuiet(frame);
+                            // Short sounds that end again are ignored; only real speech requeues.
+                            if (requeues < MaximumRequeues && detector.Add(frame, Level, true)) detector.Reset();
+                        });
+                        if (requeues < MaximumRequeues && detector.VoiceMs >= RequeueVoiceMs) Requeue();
+                    }
                     else capture.Drain(null);
                 }
 
-                if (endTurn)
+                if (endTurn && State == Phase.Recording)
                 {
-                    if (fairness && detector.ReachedLimit)
-                    {
-                        detector.Reset();
-                        quietMs = 0;
-                        Set(Phase.WaitingForQuiet, "Redezeit erreicht. Der Beitrag wurde verworfen. Nova wartet, bis du fertig bist.");
-                    }
-                    else await FinishTurn();
+                    if (detector.ReachedLimit) Log("Redezeit erreicht, Beitrag wird gesendet");
+                    await FinishTurn();
                     return;
                 }
-                if (State == Phase.WaitingForQuiet && quietMs >= detector.EndSilenceMs)
-                    Set(Phase.Listening, automatic ? "Bereit für einen neuen, kürzeren Beitrag." : "Bereit. Aufnahme für einen neuen Beitrag starten.");
-                if (State == Phase.Speaking && playback.Finished) EnterCooldown();
-                if (State == Phase.Tone && playback.Finished) Stop(false);
-                if (State == Phase.Meter && playback != null && playback.Finished)
-                {
-                    playback.Dispose();
-                    playback = null;
-                    Set(Phase.Meter, "Nur Pegel. Der Testton ist beendet.");
-                }
-                if (State == Phase.Cooldown && milliseconds() >= listenAfter)
-                    Set(Phase.Listening, automatic ? "Bereit. Die KI wartet auf den Gast." : "Bereit. Für einen Sprachtest auf „Aufnahme starten“ klicken.");
+                Advance();
             }
             catch (Exception error) { Fail(error); }
+        }
+
+        // The partner kept talking while NOVA prepared an answer that nobody heard yet:
+        // drop that answer (also from the server context) and keep recording the new words.
+        private void Requeue()
+        {
+            requeues++;
+            droppedTurn = turn;
+            owesAnswer = true;
+            if (debater != null) debater.Cancel(-1);
+            sink = null;
+            Log("Gast spricht weiter, Antwort verworfen, Beitrag wird fortgesetzt");
+            Set(Phase.Recording, "Du sprichst weiter. NOVA verwirft ihre ungehörte Antwort und hört weiter zu.");
+        }
+
+        private void Advance()
+        {
+            if (State == Phase.Thinking || State == Phase.WaitingForQuiet)
+            {
+                if (replyError != null) { Exception error = replyError; replyError = null; Fail(error); return; }
+                long buffered = sink == null ? 0 : sink.TotalBytes * 1000 / WinAudio.BytesPerSecond;
+                bool ready = sink != null && (buffered >= StartBufferMs || (replyDone && buffered > 0));
+                if (ready && State == Phase.Thinking)
+                {
+                    if (options.Automatic && options.Fairness && quietMs < detector.EndSilenceMs)
+                    {
+                        holdUntil = milliseconds() + MaximumHoldMs;
+                        Set(Phase.WaitingForQuiet, "NOVA ist bereit und wartet, bis du ausgeredet hast.");
+                    }
+                    else StartSpeaking();
+                }
+                else if (State == Phase.WaitingForQuiet && sink != null &&
+                    (quietMs >= detector.EndSilenceMs || milliseconds() >= holdUntil))
+                    StartSpeaking();
+                else if (State == Phase.WaitingForQuiet && sink == null && quietMs >= detector.EndSilenceMs)
+                    Set(Phase.Listening, options.Automatic ? "Bereit. NOVA hört zu." : "Bereit. Aufnahme für einen neuen Beitrag starten.");
+            }
+            if (State == Phase.Speaking)
+            {
+                if (replyError != null) { Exception error = replyError; replyError = null; Fail(error); return; }
+                Pump();
+                if (replyDone && (sink == null || sink.Empty) && playback.Finished)
+                {
+                    requeues = 0;
+                    EnterCooldown();
+                }
+            }
+            if (State == Phase.Tone && playback.Finished) Stop(false);
+            if (State == Phase.Meter && playback != null && playback.Finished)
+            {
+                playback.Dispose();
+                playback = null;
+                Set(Phase.Meter, "Nur Pegel. Der Testton ist beendet.");
+            }
+            if (State == Phase.Cooldown && milliseconds() >= listenAfter)
+            {
+                detector.Reset();
+                Set(Phase.Listening, options.Automatic ? "Bereit. NOVA hört zu und antwortet nach einer Sprechpause." :
+                    "Bereit. Für einen Beitrag auf „Aufnahme starten“ klicken.");
+            }
+        }
+
+        private void StartSpeaking()
+        {
+            playback.Stop();
+            Pump();
+            Answers++;
+            Set(Phase.Speaking, "NOVA spricht. Eingang gesperrt (Echo-Schutz).");
+        }
+
+        private void Pump()
+        {
+            if (sink == null) return;
+            byte[] chunk;
+            while (sink.TryRead(out chunk)) playback.Append(chunk);
         }
 
         private void ObserveQuiet(byte[] frame)
@@ -240,54 +374,67 @@ namespace DebateAI
                 Math.Min(detector.EndSilenceMs, quietMs + frame.Length * 1000 / WinAudio.BytesPerSecond);
         }
 
+        private void TakeLines()
+        {
+            if (debater == null) return;
+            TranscriptLine line;
+            while (debater.TryTakeLine(out line)) Line(line.Speaker, line.Text);
+        }
+
         private async Task FinishTurn()
         {
             byte[] pcm = detector.Finish();
+            // After a dropped answer NOVA still owes a reply, even if the follow-up was too short.
+            if (pcm == null && owesAnswer) pcm = new byte[0];
             if (pcm == null)
             {
                 Set(Phase.Listening, "Zu leise oder zu kurz. Pegel prüfen und erneut sprechen.");
                 return;
             }
             var token = lifetime.Token;
-            var elapsed = Stopwatch.StartNew();
+            int current = ++turn;
+            owesAnswer = false;
             quietMs = detector.EndSilenceMs;
             Log("Beitrag: " + (pcm.Length * 1000 / WinAudio.BytesPerSecond) + " ms");
-            Set(Phase.Thinking, "Nova verarbeitet den Beitrag. Eingang gesperrt.");
+            Set(Phase.Thinking, "NOVA denkt nach …");
             try
             {
-                byte[] reply = await debater.Reply(pcm, token);
-                if (token.IsCancellationRequested) return;
-                if (debater.LastUsage != null) Log(debater.LastUsage);
-                Log("Antwort bereit nach " + elapsed.ElapsedMilliseconds + " ms");
-                if (fairness && automatic)
+                // Only one answer may use the connection at a time. A dropped answer ends quickly.
+                Task previous = replyTask;
+                if (previous != null && !previous.IsCompleted)
                 {
-                    capture.Drain(ObserveQuiet);
-                    if (quietMs < detector.EndSilenceMs)
-                    {
-                        Set(Phase.WaitingForQuiet, "Du sprichst noch. Nova lässt dich ausreden und verwirft ihre wartende Antwort.");
-                        return;
-                    }
+                    await Task.WhenAny(previous, Task.Delay(8000, token));
+                    if (token.IsCancellationRequested) return;
+                    if (!previous.IsCompleted) throw new AppError("OpenAI beendet die vorige Antwort nicht. Sitzung neu starten.");
                 }
-                if (reply.Length > (long)detector.MaximumTurnMs * WinAudio.BytesPerSecond / 1000)
+                var elapsed = Stopwatch.StartNew();
+                sink = new AudioSink();
+                AudioSink target = sink;
+                replyDone = false;
+                replyError = null;
+                Task reply = debater.Reply(pcm, target, token);
+                replyTask = reply;
+                try { await reply; }
+                catch (Exception error)
                 {
-                    Set(Phase.Listening, "Novas Antwort überschritt die Redezeit und wurde übersprungen.");
+                    if (token.IsCancellationRequested || current != turn || current == droppedTurn) return;
+                    replyError = error;
+                    Advance();
                     return;
                 }
-                Speak(reply, "Antwort läuft. Eingang gesperrt.");
+                if (token.IsCancellationRequested || current != turn || current == droppedTurn) return;
+                replyDone = true;
+                if (debater.LastUsage != null) Log(debater.LastUsage);
+                Log("Antwort vollständig nach " + elapsed.ElapsedMilliseconds + " ms");
+                Advance();
             }
             catch (Exception error) { if (!token.IsCancellationRequested) Fail(error); }
         }
 
-        private void Speak(byte[] pcm, string note)
+        private void EnterCooldown(string note = null)
         {
-            playback.Play(pcm);
-            Set(Phase.Speaking, note);
-        }
-
-        private void EnterCooldown()
-        {
-            listenAfter = milliseconds() + cooldownMs;
-            Set(Phase.Cooldown, "Kurze Nachlaufzeit. Eingang gesperrt.");
+            listenAfter = milliseconds() + options.GuardMs;
+            Set(Phase.Cooldown, note ?? "Kurze Nachlaufzeit. Eingang gesperrt.");
         }
 
         public void Stop(bool pause)
@@ -331,6 +478,11 @@ namespace DebateAI
             clean = Close(capture) & clean;
             debater = null;
             capture = null;
+            sink = null;
+            replyTask = null;
+            replyDone = false;
+            owesAnswer = false;
+            replyError = null;
             detector.Reset();
             return clean ? null : "Ein Gerät wurde nicht sauber freigegeben. Ausgang im Mixer stummschalten und App neu öffnen.";
         }

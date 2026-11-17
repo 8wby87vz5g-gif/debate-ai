@@ -1,0 +1,66 @@
+name: Build und Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows-Client (csc, Selbsttest, Installer)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: App bauen (wie Neu-bauen.cmd beim Kunden)
+        run: call Neu-bauen.cmd
+
+      - name: Selbsttest (Logik, Realtime-Simulation, DPAPI, WinMM, Fenster)
+        run: call Selbsttest.cmd
+
+      - name: Inno Setup bereitstellen
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe nicht gefunden" }
+          "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Installer erstellen
+        working-directory: windows/installer
+        run: '"%ISCC%" /Qp DebateAI.iss'
+
+      - name: Portable ZIP erstellen
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/portable | Out-Null
+          Copy-Item DEBATE-AI.exe, DEBATE-AI.exe.config, ANLEITUNG.md dist/portable/
+          Compress-Archive -Path dist/portable/* -DestinationPath dist/DEBATE-AI-portable.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DEBATE-AI-Windows
+          path: |
+            windows/dist/DEBATE-AI-Setup-*.exe
+            windows/dist/DEBATE-AI-portable.zip
+          if-no-files-found: error
+
+  website:
+    name: Website (Typecheck und Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build

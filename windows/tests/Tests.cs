@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Threading;
@@ -18,13 +18,21 @@ namespace DebateAI
                 Run("PCM-Konvertierung und Testton", TestPcm);
                 Run("Spracherkennung, kurze Signale und Aufnahmelimit", TestDetector);
                 Run("Automatischer Dialog mit Rückkopplungssperre", TestAutomatic);
-                Run("Fairness, Redezeitlimit und neue Sprechpause", TestFairness);
+                Run("Redezeitlimit sendet den Beitrag statt ihn zu verwerfen", TestLimitSends);
+                Run("Fairness: fertige Antwort wartet auf Sprechpause", TestHold);
+                Run("Fairness: Weitersprechen verwirft ungehörte Antwort, Warteschlange", TestRequeue);
+                Run("Streaming: NOVA spricht vor dem Ende der Antwort", TestStreaming);
+                Run("NOVA unterbrechen kürzt die Antwort im Kontext", TestInterrupt);
+                Run("Jetzt antworten im Automatikmodus", TestForceReply);
+                Run("Persönlichkeit, Position, Antwortlänge und KI-Hinweis", TestPersona);
                 Run("Ruhe bricht Antwort ab und verwirft verspätetes Audio", TestModeration);
                 Run("Push-to-test, Pause und verspätete Antwort", TestPause);
                 Run("Pegel und Testton ohne Debattensitzung", TestRouting);
                 Run("Verbindungsfehler und anschließender Neustart", TestRetry);
                 Run("Realtime-Sitzung, Chunking und Antwort-Audio mit Testserver-Ereignissen", TestRealtime);
                 Run("Fehlender KI-Hinweis, API-Fehler und Abbruch", TestRealtimeErrors);
+                Run("Realtime: Mitschrift, Löschen und Kürzen ungehörter Antworten", TestRealtimeCut);
+                Run("Realtime: leerer Beitrag fordert nur eine Antwort an", TestRealtimeEmpty);
                 Run("Nutzungsprotokoll enthält ausschließlich Tokenzahlen", TestUsage);
                 Run("Windows-Verschlüsselung für aktuelles Benutzerkonto", TestDpapi);
                 Run("Windows-Geräteliste und Fensteraufbau", TestWindows);
@@ -38,6 +46,7 @@ namespace DebateAI
         private static void Wait(Task task) { task.GetAwaiter().GetResult(); }
         private static byte[] Voice() { return WinAudio.Tone(40, 440); }
         private static byte[] Silence() { return new byte[WinAudio.BytesPerSecond * 40 / 1000]; }
+        private static byte[] Long(int ms) { return WinAudio.Tone(ms, 330); }
 
         private static void TestPcm()
         {
@@ -93,32 +102,138 @@ namespace DebateAI
             }
         }
 
-        private static void TestFairness()
+        private static void TestLimitSends()
+        {
+            long time = 0;
+            using (var session = new DebateSession(() => time))
+            {
+                var input = new FakeCapture(); var output = new FakePlayback(); var ai = new FakeDebater();
+                Wait(session.Start(() => input, () => output, () => ai, true, -40, 900, true, 5));
+                time = 900; Wait(session.Tick());
+                input.Add(Voice(), 124); Wait(session.Tick());
+                Check(session.State == Phase.Recording && ai.Replies == 0, "Limit zu früh");
+                input.Add(Voice(), 1); Wait(session.Tick());
+                Check(ai.Replies == 1 && ai.LastLength == 5 * WinAudio.BytesPerSecond, "Am Redezeitlimit muss der Beitrag gesendet werden");
+                Check(session.State == Phase.Speaking && output.Plays == 1, "Antwort nach Redezeitlimit fehlt");
+            }
+        }
+
+        private static void TestHold()
         {
             long time = 0;
             using (var session = new DebateSession(() => time))
             {
                 var input = new FakeCapture(); var output = new FakePlayback();
                 var ai = new FakeDebater { Pending = new TaskCompletionSource<byte[]>() };
-                Wait(session.Start(() => input, () => output, () => ai, true, -40, 900, true, 5));
+                Wait(session.Start(() => input, () => output, () => ai, true, -40, 900, true));
                 time = 900; Wait(session.Tick());
-                input.Add(Voice(), 124); Wait(session.Tick());
-                Check(session.State == Phase.Recording && ai.Replies == 0, "Limit zu früh");
-                input.Add(Voice(), 1); Wait(session.Tick());
-                Check(session.State == Phase.WaitingForQuiet && ai.Replies == 0, "Nova unterbricht am Zeitlimit");
-                input.Add(Silence(), 29); Wait(session.Tick());
-                input.Add(Voice(), 1); Wait(session.Tick());
-                Check(session.State == Phase.WaitingForQuiet, "Kurze Pause wurde für Ende gehalten");
-                input.Add(Silence(), 30); Wait(session.Tick());
-                Check(session.State == Phase.Listening, "Nach echter Pause nicht wieder bereit");
                 input.Add(Voice(), 6); input.Add(Silence(), 29); Wait(session.Tick());
                 Check(ai.Replies == 0, "Fairness braucht 1200 ms Pause");
                 input.Add(Silence(), 1); Task thinking = session.Tick();
                 Check(ai.Replies == 1 && session.State == Phase.Thinking, "Beitrag nach Pause fehlt");
-                input.Add(Voice(), 1);
-                ai.Pending.SetResult(Voice()); Wait(thinking);
-                Check(session.State == Phase.WaitingForQuiet && output.Plays == 0, "Wartende Antwort fällt Gast ins Wort");
+                input.Add(Voice(), 3); Wait(session.Tick());
+                ai.Pending.SetResult(Long(400)); Wait(thinking);
+                Check(session.State == Phase.WaitingForQuiet && output.Plays == 0, "Fertige Antwort fällt Gast ins Wort");
+                input.Add(Silence(), 30); Wait(session.Tick());
+                Check(session.State == Phase.Speaking && output.Plays == 1, "Nach der Pause spricht NOVA nicht");
+                Check(ai.Cancels.Count == 0, "Kurzes Geräusch darf die Antwort nicht verwerfen");
             }
+        }
+
+        private static void TestRequeue()
+        {
+            long time = 0;
+            using (var session = new DebateSession(() => time))
+            {
+                var input = new FakeCapture(); var output = new FakePlayback();
+                var first = new TaskCompletionSource<byte[]>();
+                var ai = new FakeDebater { Pending = first };
+                Wait(session.Start(() => input, () => output, () => ai, true, -40, 900, true));
+                time = 900; Wait(session.Tick());
+                input.Add(Voice(), 10); input.Add(Silence(), 30); Task thinking = session.Tick();
+                Check(ai.Replies == 1 && session.State == Phase.Thinking, "Erster Beitrag fehlt");
+                input.Add(Voice(), 20); Wait(session.Tick());
+                Check(session.State == Phase.Recording && ai.Cancels.Count == 1 && ai.Cancels[0] == -1, "Weitersprechen verwirft die ungehörte Antwort nicht");
+                ai.Pending = null;
+                first.SetResult(Long(400)); Wait(thinking);
+                Check(output.Plays == 0 && session.State == Phase.Recording, "Verworfene Antwort wurde abgespielt");
+                input.Add(Silence(), 30); Wait(session.Tick());
+                Check(ai.Replies == 2 && session.State == Phase.Speaking && output.Plays == 1, "Fortgesetzter Beitrag wird nicht beantwortet");
+            }
+        }
+
+        private static void TestStreaming()
+        {
+            long time = 0;
+            using (var session = new DebateSession(() => time))
+            {
+                var input = new FakeCapture(); var output = new FakePlayback();
+                var ai = new FakeDebater { Pending = new TaskCompletionSource<byte[]>(), Early = Long(300) };
+                Wait(session.Start(() => input, () => output, () => ai, true, -40, 900, false));
+                time = 900; Wait(session.Tick());
+                input.Add(Voice(), 10); input.Add(Silence(), 19); Task thinking = session.Tick();
+                Wait(session.Tick());
+                Check(session.State == Phase.Speaking && output.Plays == 1 && !thinking.IsCompleted, "NOVA wartet auf die vollständige Antwort");
+                output.Done = true; Wait(session.Tick());
+                Check(session.State == Phase.Speaking, "Wiedergabe endet vor dem Ende der Antwort");
+                ai.Pending.SetResult(Long(200)); Wait(thinking); Wait(session.Tick());
+                Check(output.AppendedMs == 500, "Gestreamtes Audio unvollständig");
+                output.Done = true; Wait(session.Tick());
+                Check(session.State == Phase.Cooldown && session.Answers == 1, "Nach gestreamter Antwort kein Nachlauf");
+            }
+        }
+
+        private static void TestInterrupt()
+        {
+            long time = 0;
+            using (var session = new DebateSession(() => time))
+            {
+                var input = new FakeCapture(); var output = new FakePlayback();
+                var ai = new FakeDebater { Pending = new TaskCompletionSource<byte[]>(), Early = Long(1000) };
+                Wait(session.Start(() => input, () => output, () => ai, true, -40, 900, false));
+                time = 900; Wait(session.Tick());
+                input.Add(Voice(), 10); input.Add(Silence(), 19); Task thinking = session.Tick();
+                Wait(session.Tick());
+                Check(session.CanInterrupt && session.State == Phase.Speaking, "Unterbrechen nicht möglich");
+                output.Played = 420;
+                session.Interrupt();
+                Check(output.Stopped && ai.Cancels.Count == 1 && ai.Cancels[0] == 420 && session.State == Phase.Cooldown, "Unterbrechen stoppt oder kürzt nicht");
+                ai.Pending.SetResult(Long(200)); Wait(thinking); Wait(session.Tick());
+                Check(session.State == Phase.Cooldown && output.AppendedMs == 1000, "Rest der Antwort läuft nach dem Unterbrechen weiter");
+                time += 900; Wait(session.Tick());
+                Check(session.State == Phase.Listening, "Nach dem Unterbrechen hört NOVA nicht wieder zu");
+            }
+        }
+
+        private static void TestForceReply()
+        {
+            long time = 0;
+            using (var session = new DebateSession(() => time))
+            {
+                var input = new FakeCapture(); var output = new FakePlayback(); var ai = new FakeDebater();
+                Wait(session.Start(() => input, () => output, () => ai, true, -40, 900, true));
+                time = 900; Wait(session.Tick());
+                Check(!session.CanPush, "Jetzt antworten ohne Beitrag");
+                input.Add(Voice(), 20); Wait(session.Tick());
+                Check(session.CanPush && session.State == Phase.Recording, "Jetzt antworten fehlt während des Beitrags");
+                Wait(session.Push());
+                Check(ai.Replies == 1 && session.State == Phase.Speaking, "Jetzt antworten sendet nicht");
+            }
+        }
+
+        private static void TestPersona()
+        {
+            var persona = new Persona { Name = "Nova", Style = 1, Intensity = 2, Length = 0, Topic = "Tempolimit", Position = "Dafür\u0007" };
+            string text = persona.Instructions();
+            Check(text.Contains("kritisch und herausfordernd") && text.Contains("leidenschaftlich") && text.Contains("höchstens 2 Sätze") &&
+                text.Contains("Tempolimit") && text.Contains("Dafür") && !text.Contains("\u0007"), "Persona-Anweisungen unvollständig");
+            Check(text.EndsWith("personenbezogene Details wiederholen.", StringComparison.Ordinal), "Sicherheitsregeln müssen am Ende stehen");
+            Check(persona.IsDisclosure("Hallo, ich bin Nova, eine künstliche Intelligenz. Meine Stimme wird von KI erzeugt."), "Wortlaut nicht erkannt");
+            Check(persona.IsDisclosure("Hallo! Ich bin Nova – eine KI."), "Sinngemäßer Hinweis nicht erkannt");
+            Check(!persona.IsDisclosure("Ich bin Nova."), "Hinweis ohne KI akzeptiert");
+            Check(!persona.IsDisclosure("Ich bin eine künstliche Intelligenz."), "Hinweis ohne Namen akzeptiert");
+            Check(new Persona { Language = 1 }.Instructions().Contains("Englisch") && new Persona { Language = 1 }.LanguageCode == "en", "Sprache fehlt");
+            Check(new Persona { Name = "   " }.Disclosure().Contains("Nova") && new Persona { Length = 9 }.MaxOutputTokens == 3200, "Grenzwerte falsch");
         }
 
         private static void TestModeration()
@@ -212,15 +327,16 @@ namespace DebateAI
                 Check(intro.Length == Voice().Length, "Intro-PCM stimmt nicht");
                 Check(wire.Out[0].Contains("\"turn_detection\":null") && wire.Out[0].Contains("24000"), "Sessionformat oder VAD falsch");
                 Check(wire.Out[1].Contains("\"conversation\":\"none\""), "KI-Hinweis sollte nicht zum Debattenverlauf zählen");
-                byte[] reply = ai.Reply(new byte[14000], CancellationToken.None).GetAwaiter().GetResult();
-                Check(reply.Length == Voice().Length && wire.Out.Count == 6 && wire.Out[2].Contains(".append") && wire.Out[3].Contains(".append") &&
+                var sink = new AudioSink();
+                ai.Reply(new byte[14000], sink, CancellationToken.None).GetAwaiter().GetResult();
+                Check(sink.ReadAll().Length == Voice().Length && wire.Out.Count == 6 && wire.Out[2].Contains(".append") && wire.Out[3].Contains(".append") &&
                     wire.Out[4].Contains(".commit") && wire.Out[5].Contains("response.create"), "Falsche Ereignisreihenfolge oder PCM-Chunking");
             }
         }
 
         private static void TestRealtimeErrors()
         {
-            var wire = new FakeWire(); wire.Startup("Ich bin Nova.");
+            var wire = new FakeWire(); wire.Startup("Ich bin Nova."); wire.Audio("Ich bin Nova.", "completed");
             using (var ai = new RealtimeDebater(wire)) Expect<AppError>(() => Wait(ai.Start(CancellationToken.None)), "KI-Hinweis");
             wire = new FakeWire();
             wire.In.Enqueue("{\"type\":\"error\",\"error\":{\"code\":\"insufficient_quota\",\"message\":\"SECRET\"}}");
@@ -233,13 +349,62 @@ namespace DebateAI
             using (var ai = new RealtimeDebater(wire))
             {
                 Wait(ai.Start(CancellationToken.None));
-                Expect<AppError>(() => Wait(ai.Reply(Voice(), CancellationToken.None)), "abgebrochen");
+                Expect<AppError>(() => Wait(ai.Reply(Voice(), new AudioSink(), CancellationToken.None)), "abgebrochen");
             }
             using (var token = new CancellationTokenSource())
             using (var ai = new RealtimeDebater(new FakeWire()))
             {
                 token.Cancel();
                 Expect<OperationCanceledException>(() => Wait(ai.Start(token.Token)), null);
+            }
+        }
+
+        private static void TestRealtimeCut()
+        {
+            var wire = new FakeWire(); wire.Startup(RealtimeDebater.Disclosure);
+            wire.In.Enqueue("{\"type\":\"input_audio_buffer.committed\"}");
+            wire.In.Enqueue("{\"type\":\"conversation.item.input_audio_transcription.completed\",\"transcript\":\" Schule sollte später beginnen. \"}");
+            wire.Audio("Das ist ein interessanter Punkt.", "completed");
+            using (var ai = new RealtimeDebater(wire, new Persona(), true))
+            {
+                Wait(ai.Start(CancellationToken.None));
+                Check(wire.Out[0].Contains("gpt-4o-mini-transcribe") && wire.Out[0].Contains("\"language\":\"de\"") && wire.Out[0].Contains("marin"),
+                    "Transkription oder Stimme nicht konfiguriert");
+                Wait(ai.Reply(Voice(), new AudioSink(), CancellationToken.None));
+                var lines = new List<string>(); TranscriptLine line;
+                while (ai.TryTakeLine(out line)) lines.Add(line.Speaker + ":" + line.Text);
+                Check(lines.Contains("Gast:Schule sollte später beginnen.") && lines.Contains("Nova:Das ist ein interessanter Punkt."), "Mitschrift fehlt");
+                int before = wire.Out.Count;
+                ai.Cancel(-1);
+                Check(wire.Out.Count == before + 1 && wire.Out[before].Contains("conversation.item.delete") && wire.Out[before].Contains("item_test"),
+                    "Ungehörte Antwort wird nicht aus dem Kontext gelöscht");
+                ai.Cancel(500);
+                Check(wire.Out.Count == before + 1, "Bereits gelöschte Antwort darf nicht erneut bearbeitet werden");
+            }
+            wire = new FakeWire(); wire.Startup(RealtimeDebater.Disclosure);
+            wire.In.Enqueue("{\"type\":\"input_audio_buffer.committed\"}");
+            wire.Audio(null, "completed");
+            using (var ai = new RealtimeDebater(wire))
+            {
+                Wait(ai.Start(CancellationToken.None));
+                Wait(ai.Reply(Voice(), new AudioSink(), CancellationToken.None));
+                ai.Cancel(500);
+                Check(wire.Out[wire.Out.Count - 1].Contains("conversation.item.truncate") && wire.Out[wire.Out.Count - 1].Contains("\"audio_end_ms\":500"),
+                    "Unterbrochene Antwort wird nicht gekürzt");
+            }
+        }
+
+        private static void TestRealtimeEmpty()
+        {
+            var wire = new FakeWire(); wire.Startup(RealtimeDebater.Disclosure);
+            wire.Audio(null, "completed");
+            using (var ai = new RealtimeDebater(wire))
+            {
+                Wait(ai.Start(CancellationToken.None));
+                int before = wire.Out.Count;
+                var sink = new AudioSink();
+                Wait(ai.Reply(new byte[0], sink, CancellationToken.None));
+                Check(wire.Out.Count == before + 1 && wire.Out[before].Contains("response.create") && sink.TotalBytes > 0, "Leerer Beitrag falsch behandelt");
             }
         }
 
@@ -274,6 +439,11 @@ namespace DebateAI
 
         private static void TestWindows()
         {
+            if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+            {
+                Console.WriteLine("    Übersprungen: nur unter Windows ausführbar (WinMM).");
+                return;
+            }
             var inputs = WinAudio.Devices(true); var outputs = WinAudio.Devices(false);
             Console.WriteLine("    Windows meldet {0} Eingang/Eingänge und {1} Ausgang/Ausgänge.", inputs.Count, outputs.Count);
             foreach (var device in inputs) Check(WinAudio.Resolve(true, device) == device.Id, "Eingangs-ID stimmt nicht");
@@ -306,10 +476,19 @@ namespace DebateAI
 
         private sealed class FakePlayback : IPlayback
         {
-            public bool Done, Closed;
-            public int Plays;
+            public bool Done = true, Closed, Stopped;
+            public int Plays, AppendedMs, Played;
             public bool Finished { get { return Done; } }
+            public int PlayedMs { get { return Played; } }
             public void Play(byte[] pcm) { Check(pcm.Length > 0 && !Closed, "Ungültige Wiedergabe"); Plays++; Done = false; }
+            public void Append(byte[] pcm)
+            {
+                Check(pcm.Length > 0 && !Closed, "Ungültige Wiedergabe");
+                if (Done) Plays++;
+                AppendedMs += pcm.Length * 1000 / WinAudio.BytesPerSecond;
+                Done = false;
+            }
+            public void Stop() { Stopped = true; Done = true; }
             public void Dispose() { Closed = true; }
         }
 
@@ -317,20 +496,27 @@ namespace DebateAI
         {
             public string LastUsage { get { return null; } }
             public TaskCompletionSource<byte[]> Pending;
+            public byte[] Early;
             public Exception StartError;
             public CancellationToken Token;
-            public int Replies;
+            public int Replies, LastLength;
+            public readonly List<int> Cancels = new List<int>();
             public bool Closed;
             public Task<byte[]> Start(CancellationToken token)
             {
                 if (StartError != null) throw StartError;
                 return Task.FromResult<byte[]>(null);
             }
-            public Task<byte[]> Reply(byte[] pcm, CancellationToken token)
+            public async Task Reply(byte[] pcm, AudioSink sink, CancellationToken token)
             {
-                Replies++; Token = token;
-                return Pending == null ? Task.FromResult(Voice()) : Pending.Task;
+                Replies++; Token = token; LastLength = pcm.Length;
+                if (Early != null) sink.Write(Early);
+                if (Pending == null) { sink.Write(Voice()); return; }
+                byte[] rest = await Pending.Task;
+                sink.Write(rest);
             }
+            public void Cancel(int playedMs) { Cancels.Add(playedMs); }
+            public bool TryTakeLine(out TranscriptLine line) { line = null; return false; }
             public void Dispose() { Closed = true; }
         }
 
@@ -350,6 +536,7 @@ namespace DebateAI
             }
             public void Audio(string transcript, string status)
             {
+                In.Enqueue(json.Serialize(new { type = "response.output_item.added", item = new { id = "item_test" } }));
                 In.Enqueue(json.Serialize(new { type = "response.output_audio.delta", delta = Convert.ToBase64String(Voice()) }));
                 if (transcript != null) In.Enqueue(json.Serialize(new { type = "response.output_audio_transcript.done", transcript = transcript }));
                 In.Enqueue(json.Serialize(new { type = "response.done", response = new { status = status } }));
