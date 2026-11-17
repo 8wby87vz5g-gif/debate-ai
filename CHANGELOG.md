@@ -1,5 +1,9 @@
 # Änderungsprotokoll
 
+## 0.7.1 · 17.11.2026
+
+- „TikTok LIVE verbinden“: neuer Knopf **Diagnose kopieren**. Fasst Windows-Version, KI-Modus, alle Audiogeräte, Voicemeeter, LIVE Studio, Overlay und das Ergebnis jeder Prüfung als Text zusammen (ohne Schlüssel, ohne Aufnahmen), zum Einfügen in den Support-Chat.
+
 ## 0.7.0 · 17.11.2026 · Live-Szene und Kostenschutz
 
 - **Stream-Overlay für TikTok LIVE Studio:** DEBATE AI liefert eine 9:16-Szene „DU GEGEN NOVA“ über `http://127.0.0.1:18190/nova` (Link-Quelle): KI-Hinweis, Thema, Gastrahmen, NOVA-Figur, die auf NOVAs echte Ausgabelautstärke reagiert; durchsichtige Variante `?view=badge`. Nur lokal erreichbar, nur GET, fremde Hosts abgelehnt.

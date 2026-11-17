@@ -1,6 +1,6 @@
 # DEBATE AI · Projektstatus
 
-Stand: 17.11.2026 · Windows-Client 0.7.0
+Stand: 17.11.2026 · Windows-Client 0.7.1
 
 Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter Hardware / mit echter OpenAI-Verbindung / mit TikTok** · 🟡 teilweise · ❌ fehlt
 

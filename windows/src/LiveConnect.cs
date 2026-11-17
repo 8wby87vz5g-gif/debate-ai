@@ -26,6 +26,13 @@ namespace DebateAI
             }
         }
 
+        private static List<string> ItemsOf(ComboBox box)
+        {
+            var names = new List<string>();
+            foreach (object item in box.Items) names.Add(item == null ? "" : item.ToString());
+            return names;
+        }
+
         private void ShowLiveConnect()
         {
             if (!session.ReadyForStart) { MessageBox.Show(this, "Bitte zuerst die laufende Debatte beenden.", "TikTok LIVE"); return; }
@@ -49,10 +56,12 @@ namespace DebateAI
             {
                 var list = new FlowLayoutPanel { Location = new Point(16, 16), Size = new Size(788, 600), FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
                 var verdict = new Label { Location = new Point(16, 628), AutoSize = true, MaximumSize = new Size(560, 0), Font = new Font("Segoe UI", 11, FontStyle.Bold) };
-                Button go = Big("Live-Debatte starten", Theme.Green), all = Big("Alles prüfen", Theme.Cyan), close = Button("Schließen");
-                go.Location = new Point(600, 660); all.Location = new Point(430, 660); close.Location = new Point(16, 672);
+                Button go = Big("Live-Debatte starten", Theme.Green), all = Big("Alles prüfen", Theme.Cyan), close = Button("Schließen"),
+                    diagnose = Button("Diagnose kopieren");
+                go.Location = new Point(600, 660); all.Location = new Point(430, 660); close.Location = new Point(16, 672); diagnose.Location = new Point(110, 672);
                 go.Enabled = false;
-                dialog.Controls.AddRange(new Control[] { list, verdict, go, all, close });
+                dialog.Controls.AddRange(new Control[] { list, verdict, go, all, close, diagnose });
+                var rows = new List<CheckRow>();
 
                 Func<string, Control[], CheckRow> row = (title, actions) =>
                 {
@@ -70,6 +79,7 @@ namespace DebateAI
                     if (actions != null && actions.Length != 0) body.Controls.Add(Row(actions));
                     panel.Controls.Add(item.Mark, 0, 0); panel.Controls.Add(body, 1, 0);
                     list.Controls.Add(panel);
+                    rows.Add(item);
                     return item;
                 };
 
@@ -123,6 +133,27 @@ namespace DebateAI
 
                 Func<string, Device> findInput = hint => FindNamed(input, hint, null);
                 Func<string, string, Device> findOutput = (hint, avoid) => FindNamed(output, hint, avoid);
+
+                // Everything the checks found, as plain text to paste into a support chat (no keys, no recordings).
+                diagnose.Click += delegate
+                {
+                    var text = new System.Text.StringBuilder();
+                    text.AppendLine("DEBATE AI " + Version + " · Diagnose " + DateTime.Now.ToString("dd.MM.yyyy HH:mm"));
+                    text.AppendLine("Windows: " + Environment.OSVersion.VersionString + (Environment.Is64BitOperatingSystem ? " (64 Bit)" : ""));
+                    text.AppendLine("KI-Modus: " + aiMode.Text + (LocalMode ? " · " + localModels.Llm + " · Whisper " + localModels.Whisper : "") +
+                        " · API-Schlüssel: " + (LocalData.HasKey ? "hinterlegt" : "keiner"));
+                    text.AppendLine("Gewählt: Eingang „" + input.Text + "“ · Ausgang „" + output.Text + "“");
+                    text.AppendLine("Eingänge: " + string.Join(" | ", ItemsOf(input)));
+                    text.AppendLine("Ausgänge: " + string.Join(" | ", ItemsOf(output)));
+                    text.AppendLine("Voicemeeter: " + (vm == null ? "nicht verbunden" : "verbunden") + " · LIVE Studio läuft: " + (LiveStudio.Running() ? "ja" : "nein") +
+                        " · Overlay: " + (overlay == null ? "aus" : overlay.Url));
+                    text.AppendLine("Echoprüfung: " + (session.EchoCheckPassed == true ? "bestanden" : session.EchoCheckPassed == false ? "Echo erkannt" : "offen") +
+                        " · Sprecherwechsel: " + mode.Text + " · Unterbrechung: " + barge.Text + " · Kostenlimit: " + costLimit.Value.ToString("0.00") + " $");
+                    foreach (CheckRow item in rows)
+                        text.AppendLine((item.Mark.Text == "✓" ? "[OK] " : item.Mark.Text == "✗" ? "[FEHLER] " : "[offen] ") + item.Title.Text + ": " + item.Detail.Text.Replace("\r", " ").Replace("\n", " "));
+                    try { Clipboard.SetText(text.ToString()); MessageBox.Show(dialog, "Diagnose kopiert. Du kannst sie jetzt in den Chat einfügen.\nSie enthält keine Schlüssel und keine Aufnahmen.", "Diagnose"); }
+                    catch (Exception) { MessageBox.Show(dialog, text.ToString(), "Diagnose"); }
+                };
 
                 Action update = () =>
                 {

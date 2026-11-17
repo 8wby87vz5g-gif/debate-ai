@@ -1,4 +1,4 @@
-# Testbericht · DEBATE AI 0.7.0
+# Testbericht · DEBATE AI 0.7.1
 
 Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler version 6.8.0.105 (Deb
 
