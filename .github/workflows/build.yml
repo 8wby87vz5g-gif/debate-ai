@@ -172,6 +172,34 @@ jobs:
             [ "$code" = "200" ] || { echo "::error::nicht erreichbar: $url"; exit 1; }
           done
 
+  local-e2e:
+    name: Lokaler Modus echt unter Windows (whisper.cpp, Ollama, Piper)
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testprogramm bauen
+        shell: cmd
+        working-directory: windows
+        run: |
+          "%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /main:DebateAI.LocalE2E /target:exe /warnaserror+ /codepage:65001 /out:LocalE2E.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Security.dll /r:System.Management.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll src\*.cs ..\tools\LocalE2E.cs
+      - name: Ollama wie ein Nutzer installieren (offizieller Windows-Installer)
+        shell: pwsh
+        run: |
+          $setup = "$env:RUNNER_TEMP\OllamaSetup.exe"
+          Invoke-WebRequest https://ollama.com/download/OllamaSetup.exe -OutFile $setup
+          Start-Process $setup -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES" -Wait
+          $exe = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe"
+          if (-not (Test-Path $exe)) { throw "ollama.exe nicht gefunden" }
+          & $exe --version
+          if (-not (Get-NetTCPConnection -LocalPort 11434 -State Listen -ErrorAction SilentlyContinue)) { Start-Process $exe -ArgumentList "serve" -WindowStyle Hidden }
+          for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod http://127.0.0.1:11434/api/tags | Out-Null; break } catch { Start-Sleep 1 } }
+          Invoke-RestMethod http://127.0.0.1:11434/api/version
+      - name: Download, Messung und drei Debattenrunden (gemma3:4b, Whisper base)
+        shell: cmd
+        working-directory: windows
+        run: LocalE2E.exe gemma3:4b base
+
   website:
     name: Website (Typecheck und Build)
     runs-on: ubuntu-latest

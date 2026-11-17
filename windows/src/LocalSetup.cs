@@ -87,6 +87,39 @@ namespace DebateAI
         }
     }
 
+    // Shared by "Lokale KI einrichten" and the Windows end-to-end check in CI.
+    internal static class LocalInstaller
+    {
+        public static List<string> Missing(LocalModels models)
+        {
+            var list = new List<string>();
+            if (!File.Exists(LocalPaths.WhisperExe)) list.Add("whisper");
+            if (!File.Exists(LocalPaths.WhisperModel(models.Whisper))) list.Add("whisperModel");
+            if (!File.Exists(LocalPaths.PiperExe)) list.Add("piper");
+            if (!File.Exists(LocalPaths.VoiceModel(models.Voice))) list.Add("voice");
+            return list;
+        }
+
+        public static async Task Download(LocalModels target, List<string> todo, bool needModel, Action<string> report, CancellationToken token)
+        {
+            if (todo.Contains("whisper"))
+                await Downloader.Zip(Downloader.AssetUrl(LocalSources.WhisperReleases, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "blas", "cuda", "vulkan", "openvino", "cublas", "arm", "win32" }),
+                    LocalPaths.WhisperFolder, report, token).ConfigureAwait(false);
+            if (todo.Contains("whisperModel"))
+                await Downloader.File(LocalSources.WhisperModelBase + target.Whisper + ".bin", LocalPaths.WhisperModel(target.Whisper), report, token).ConfigureAwait(false);
+            if (todo.Contains("piper"))
+                await Downloader.Zip(Downloader.AssetUrl(LocalSources.PiperRelease, "piper_windows_amd64.zip", new[] { "windows", "amd64" }, new string[0]),
+                    LocalPaths.PiperFolder, report, token).ConfigureAwait(false);
+            if (todo.Contains("voice"))
+            {
+                VoiceChoice voice = LocalSources.Voice(target.Voice);
+                await Downloader.File(LocalSources.VoiceBase + voice.Path + voice.Id + ".onnx", LocalPaths.VoiceModel(voice.Id), report, token).ConfigureAwait(false);
+                await Downloader.File(LocalSources.VoiceBase + voice.Path + voice.Id + ".onnx.json", LocalPaths.VoiceModel(voice.Id) + ".json", report, token).ConfigureAwait(false);
+            }
+            if (needModel) await OllamaChat.Pull(target.Llm, text => report("Ollama: " + text), token).ConfigureAwait(false);
+        }
+    }
+
     internal sealed class HardwareInfo
     {
         public double RamGb;

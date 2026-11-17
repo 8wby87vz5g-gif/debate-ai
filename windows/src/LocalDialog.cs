@@ -89,15 +89,7 @@ namespace DebateAI
                     bench.Enabled = ready && work == null;
                     download.Enabled = work == null && (missing().Count != 0 || (installed != null && !OllamaChat.HasModel(installed, localModels.Llm)));
                 };
-                missing = () =>
-                {
-                    var list = new List<string>();
-                    if (!File.Exists(LocalPaths.WhisperExe)) list.Add("whisper");
-                    if (!File.Exists(LocalPaths.WhisperModel(localModels.Whisper))) list.Add("whisperModel");
-                    if (!File.Exists(LocalPaths.PiperExe)) list.Add("piper");
-                    if (!File.Exists(LocalPaths.VoiceModel(localModels.Voice))) list.Add("voice");
-                    return list;
-                };
+                missing = () => LocalInstaller.Missing(localModels);
                 Action<bool> busy = on =>
                 {
                     download.Enabled = bench.Enabled = useRecommended.Enabled = close.Enabled = !on;
@@ -137,24 +129,7 @@ namespace DebateAI
                     {
                         CancellationToken token = work.Token;
                         LocalModels target = localModels;
-                        await Task.Run(async () =>
-                        {
-                            if (todo.Contains("whisper"))
-                                await Downloader.Zip(Downloader.AssetUrl(LocalSources.WhisperReleases, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "blas", "cuda", "vulkan", "openvino", "cublas", "arm", "win32" }),
-                                    LocalPaths.WhisperFolder, report, token);
-                            if (todo.Contains("whisperModel"))
-                                await Downloader.File(LocalSources.WhisperModelBase + target.Whisper + ".bin", LocalPaths.WhisperModel(target.Whisper), report, token);
-                            if (todo.Contains("piper"))
-                                await Downloader.Zip(Downloader.AssetUrl(LocalSources.PiperRelease, "piper_windows_amd64.zip", new[] { "windows", "amd64" }, new string[0]),
-                                    LocalPaths.PiperFolder, report, token);
-                            if (todo.Contains("voice"))
-                            {
-                                VoiceChoice voice = LocalSources.Voice(target.Voice);
-                                await Downloader.File(LocalSources.VoiceBase + voice.Path + voice.Id + ".onnx", LocalPaths.VoiceModel(voice.Id), report, token);
-                                await Downloader.File(LocalSources.VoiceBase + voice.Path + voice.Id + ".onnx.json", LocalPaths.VoiceModel(voice.Id) + ".json", report, token);
-                            }
-                            if (needModel) await OllamaChat.Pull(target.Llm, text => report("Ollama: " + text), token);
-                        });
+                        await Task.Run(() => LocalInstaller.Download(target, todo, needModel, report, token));
                         progress.Text = "Fertig heruntergeladen.";
                         LocalData.WriteLog("Lokale KI heruntergeladen: " + string.Join(", ", todo) + (needModel ? ", " + localModels.Llm : ""));
                     }
