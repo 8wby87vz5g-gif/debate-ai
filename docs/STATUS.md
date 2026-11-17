@@ -38,13 +38,13 @@ Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter H
 | Komponente | Status |
 |---|---|
 | Persönlichkeiten (5 Stile, Intensität, Länge, Stimme, Sprache, Thema, Position), eigene Profile | ✅ |
-| Dunkle Oberfläche, Statussymbol, Wellenform, Statusanzeigen | 🟡 unter Mono geprüft, unter Windows ungesehen |
+| Dunkle Oberfläche, Statussymbol, Wellenform, Statusanzeigen | 🟡 startet unter Windows stabil; Darstellung noch von niemandem gesehen |
 | Einstellungen speichern, lokale Daten löschen | ✅ |
 | Geräteerkennung Voicemeeter Standard/Banana | 🟡 aus 0.1.2 |
 | Geführter Einrichtungsassistent mit Profilen für TikTok LIVE Studio, OBS, Discord, lokal | ✅ Logik · ⚪ auf Windows ungesehen |
 | Modus C KI gegen KI | ❌ nach Live-Abnahme |
 | Modus D Moderation | ❌ nach Live-Abnahme |
-| Installer (Inno Setup), Windows-CI | ⚪ Skripte fertig, erster CI-Lauf ausstehend (GitHub-Repository fehlt) |
+| Windows-Build, Selbsttest, Installer, Installationstest, Release (GitHub Actions) | ✅ auf echtem Windows (Build-Server ohne Audiogeräte) |
 | Update-Mechanismus, Code-Signierung | ❌ |
 | Website, Konten, Stripe, Lizenzserver | 🟡 Landingpage / ❌ Rest, bewusst nach der Live-Abnahme |
 

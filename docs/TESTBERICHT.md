@@ -13,6 +13,22 @@ Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler ver
 | **Live-Pflichtabnahme mit echtem Menschen über TikTok LIVE** | **nicht durchgeführt, ungetestet** |
 | Echte Windows-Audiogeräte, echte OpenAI-Realtime-Sitzung, Latenz | **nicht durchgeführt, ungetestet** |
 
+## Echter Windows-Build (GitHub Actions, windows-latest)
+
+Erster Lauf nach dem Hochladen, 17.11.2026, Lauf 44065361271:
+
+| Schritt | Ergebnis |
+|---|---|
+| Kompilierung mit dem in Windows enthaltenen C#-Compiler (`Neu-bauen.cmd`, Warnungen = Fehler) | bestanden |
+| `Selbsttest.cmd` unter Windows: 37 Tests inklusive echter DPAPI-Verschlüsselung, WinMM-Geräteabfrage und Fensteraufbau | **37/37 bestanden** (der Build-Server hat keine Audiogeräte: „0 Eingänge, 0 Ausgänge“) |
+| Installer bauen (Inno Setup 6) | `DEBATE-AI-Setup-0.4.0.exe`, 2,1 MB |
+| Installer still installieren, Dateien und Version 0.4.0 prüfen | bestanden |
+| Installierte App starten | läuft 8 s stabil, Fenster „DEBATE AI 0.4.0 · NOVA“ |
+| Deinstallation | bestanden, App entfernt |
+| Release `v0.4.0` mit Installer und portabler ZIP | angelegt |
+
+Weiterhin **ungetestet**: echte Audiogeräte, echte OpenAI-Sitzung, TikTok LIVE Studio, Latenz.
+
 ## Was die automatischen Tests abdecken
 
 - **Sprecherwechsel:** lokal (Pegel und Pause) mit Upload während des Sprechens; semantisch über OpenAI-Ereignisse; Redezeitlimit.
