@@ -11,6 +11,8 @@ jobs:
   windows:
     name: Windows-Client (csc, Selbsttest, Installer)
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     defaults:
       run:
         shell: cmd
@@ -19,6 +21,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Version aus src/AppInfo.cs lesen
+        id: version
         shell: pwsh
         run: |
           $line = Select-String -Path src/AppInfo.cs -Pattern 'AssemblyInformationalVersion\("([^"]+)"\)'
@@ -26,6 +29,7 @@ jobs:
           if (-not $version) { throw "Version nicht gefunden" }
           if ($env:GITHUB_REF -like 'refs/tags/v*' -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME passt nicht zu Version $version" }
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Version $version"
 
       - name: App bauen (wie Neu-bauen.cmd beim Kunden)
@@ -90,26 +94,36 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: GitHub-Release (nur bei Versions-Tag)
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: GitHub-Release (neue Version auf main)
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.windows.outputs.version }}
     steps:
+      - name: Prüfen, ob es das Release schon gibt
+        id: check
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release v$VERSION existiert bereits, nichts zu tun."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@v5
+        if: steps.check.outputs.exists == 'false'
         with:
-          pattern: DEBATE-AI-Windows-*
-          merge-multiple: true
+          name: DEBATE-AI-Windows-${{ needs.windows.outputs.version }}
           path: dist
       - name: Release mit Installer anlegen
-        env:
-          GH_TOKEN: ${{ github.token }}
+        if: steps.check.outputs.exists == 'false'
         run: |
           ls -la dist
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "DEBATE AI $GITHUB_REF_NAME" \
-            --notes "Windows-Installer und portable Version. Nicht code-signiert: Windows SmartScreen zeigt eine Warnung (Weitere Informationen → Trotzdem ausführen). Live-Test-Anleitung: docs/HARDWARE-TEST.md" \
-            --prerelease
+          gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "DEBATE AI $VERSION" --prerelease \
+            --notes "Windows-Installer (DEBATE-AI-Setup-$VERSION.exe) und portable Version, automatisch gebaut und getestet (Selbsttest, stille Installation, Start, Deinstallation). Nicht code-signiert: Windows SmartScreen zeigt eine Warnung (Weitere Informationen → Trotzdem ausführen). Live-Test-Anleitung: docs/HARDWARE-TEST.md, TikTok-Einrichtung: docs/LIVE-SETUP.md. Die Live-Funktion ist auf echter Hardware noch ungetestet."
 
   website:
     name: Website (Typecheck und Build)
