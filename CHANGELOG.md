@@ -1,5 +1,25 @@
 # Änderungsprotokoll
 
+## 0.3.0 · 17.11.2026
+
+**Hauptziel: echte Live-Debatte Mensch gegen NOVA (TikTok LIVE).** Ungetestet auf echter Hardware, siehe `docs/STATUS.md`.
+
+### Neu
+- Ereignisgesteuerte Vollduplex-Verbindung zu OpenAI Realtime: Gast-Audio wird fortlaufend gestreamt, Antworten kommen gestreamt zurück.
+- Semantische Satzende-Erkennung durch OpenAI (`semantic_vad`) mit einstellbarer Geduld; NOVA entscheidet selbst, wann sie antwortet (keine automatischen Server-Antworten).
+- Unterbrechung durch den Gast einstellbar: NOVA stoppt sofort, beendet ihren Satz oder ignoriert (Halbduplex). Unterbrochene Antworten werden im Kontext gekürzt.
+- Warteschlange: Beiträge während NOVAs Rede oder einer laufenden Antwort gehen nicht verloren.
+- Echo-Schutz: Echoprüfung im Setup, Echo-Erkennung per Hüllkurven-Korrelation, Selbstgespräch-Schutz anhand der Mitschrift mit automatischem Wechsel auf Halbduplex.
+- Debattenintelligenz: feste Debattenmethode (Kernbehauptung, wechselnde Gegenzüge, Widersprüche, Position anpassen, Umgang mit Provokationen, keine Floskeln).
+- Debattengedächtnis: Protokoll alle 4 Antworten, wird in die Sitzung übernommen; automatische neue Sitzung bei Abbruch oder nach 55 Minuten mit erhaltenem Protokoll.
+- NOVA bringt die Debatte nach einstellbarer Stille voran; Knöpfe „NOVA soll sprechen“ und „NOVA stumm“.
+- Latenzmessung pro Antwort und Live-Testbericht mit Pflichtabnahme-Tabelle.
+- Anleitung für die TikTok-LIVE-Pipeline (`docs/LIVE-SETUP.md`).
+
+### Geändert
+- Lokale Satzende-Erkennung lädt den Beitrag schon während des Sprechens hoch (geringere Latenz).
+- Unbekannte OpenAI-Fehler während einer Debatte beenden sie nicht mehr, sondern werden protokolliert; nach drei fehlgeschlagenen Antworten in Folge wird abgebrochen.
+
 ## 0.2.0 · 17.11.2026
 
 **Hauptziel: NOVA antwortet selbstständig und hörbar.**

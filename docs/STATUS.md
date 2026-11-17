@@ -1,69 +1,60 @@
 # DEBATE AI · Projektstatus
 
-Stand: 17.11.2026 · Windows-Client 0.2.0
+Stand: 17.11.2026 · Windows-Client 0.3.0
 
-Legende: ✅ fertig und automatisch getestet · 🟡 teilweise fertig · ⚪ implementiert, aber auf echter Hardware oder mit echter API **ungeprüft** · ❌ fehlt noch
+Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter Hardware / mit echter OpenAI-Verbindung / mit TikTok** · 🟡 teilweise · ❌ fehlt
 
-## Ursache „NOVA hört, antwortet aber nicht“ (0.1.x)
+> **Wichtig:** Die Live-Pflichtabnahme (echter Mensch, TikTok LIVE, ≥ 10 Wechsel, gemessene Latenz) ist **noch nicht durchgeführt**. Alle Live-Funktionen gelten bis dahin als ungetestet. Ablauf: `docs/HARDWARE-TEST.md`.
 
-Die Analyse des Quellcodes 0.1.2 ergab fünf Ursachen, die einzeln oder zusammen dazu führten, dass NOVA Audio empfing, aber nicht hörbar antwortete:
+## Priorität 1: Live-Debatte Mensch gegen NOVA
 
-1. **Offline-Probe war standardmäßig an.** Damit antwortet NOVA nur mit einem Piepton, nie mit Sprache. Die Teststimme funktionierte, die KI wurde aber nie angesprochen.
-2. **Push-to-test war der Standardmodus.** Ohne Klick auf „Aufnahme starten“ und „Beitrag senden“ ging nie ein Beitrag an OpenAI.
-3. **Fairness verwarf Beiträge am Redezeitlimit (12 s).** Bei YouTube-Ton ohne Sprechpausen von 1,2 s wurde jeder Beitrag nach 12 s gelöscht, danach wartete NOVA auf Ruhe, die nie kam.
-4. **Antworten länger als die Redezeit wurden stumm übersprungen.** Eine Antwort von drei Sätzen kann über 12 s dauern.
-5. **Wortgenaue Prüfung des KI-Hinweises.** Wich das Modell beim Vorlesen minimal ab, brach die Sitzung schon beim Start ab.
+| Anforderung | Umsetzung in 0.3.0 | Automatischer Test | Live |
+|---|---|---|---|
+| Live zuhören, ohne Klick antworten | Audio wird fortlaufend zu OpenAI gestreamt; Antwort nach erkanntem Satzende | ✅ | ⚪ |
+| Erkennen, wann der Mensch wirklich fertig ist; bei Unsicherheit warten | Semantische Satzende-Erkennung von OpenAI (`semantic_vad`), Geduld einstellbar; NOVA löst Antworten selbst aus | ✅ Protokoll | ⚪ |
+| Kurze Pausen führen nicht zum Dazwischenreden | Geduld „geduldig“; Fairness hält fertige Antworten zurück; Weitersprechen verwirft ungehörte Antworten | ✅ | ⚪ |
+| Vollduplex | Eingang bleibt offen, während NOVA spricht (außer Halbduplex-Einstellung) | ✅ | ⚪ |
+| Unterbrechung einstellbar (stoppen / Satz beenden / ignorieren) | Lokale Erkennung ab einstellbarer Sprechdauer; Kontext wird auf Gehörtes gekürzt | ✅ | ⚪ |
+| Echovermeidung | Echoprüfung im Setup; Echo-Erkennung per Hüllkurven-Korrelation; Selbstgespräch-Schutz per Mitschrift → automatisch Halbduplex | ✅ (simulierte Signale) | ⚪ |
+| Gesprächswechsel ohne Verlust | Warteschlange: Beiträge während NOVAs Rede oder einer laufenden Antwort werden vorgemerkt und beantwortet | ✅ | ⚪ |
+| Fortlaufender Kontext, Langzeitkontext | Gesprächsverlauf in der Sitzung; Debattenprotokoll alle 4 Antworten; Kürzung alter Teile mit Retention-Ratio; neue Sitzung nach 55 min oder Abbruch mit Protokoll | ✅ | ⚪ |
+| Debattenintelligenz (Kernbehauptung, Gegenargumente, Widersprüche, Position anpassen, Provokationen, keine Floskeln, Übergänge) | Feste Debattenmethode in den Anweisungen, Intensität einstellbar | ✅ Text vorhanden | ⚪ Qualität ungeprüft |
+| Gespräch selbst voranbringen | Optional: Nachfrage nach X s Stille, höchstens einmal pro Pause; Knopf „NOVA soll sprechen“ | ✅ | ⚪ |
+| Flüssig, geringe Verzögerung | Streaming in beide Richtungen; Wiedergabe ab 240 ms Puffer | ✅ | ⚪ Latenz ungemessen |
+| Latenz messen und dokumentieren | Messung pro Antwort (Satzende → hörbar, Anforderung → erstes Audio), Anzeige, Live-Testbericht | ✅ | ⚪ |
+| Klar als KI erkennbar | Gesprochener Hinweis beim Start, Dauerhinweis in der App, Anleitung für Stream-Einblendung | ✅ | ⚪ |
+| TikTok-LIVE-Pipeline | Routing mit Voicemeeter Banana dokumentiert (`docs/LIVE-SETUP.md`) | – | ⚪ |
 
-Dazu kam die Latenz: Die komplette Antwort wurde gepuffert, bevor NOVA sprach.
+### Bekannte Grenzen
 
-## Windows-Client
+- **Echo-Erkennung braucht Anlauf:** Ohne bestandene Echoprüfung hört NOVA in den ersten ca. 1,7 s jeder eigenen Antwort nicht zu. Mit bestandener Echoprüfung gilt Vollduplex ab dem ersten Wort.
+- **Echo so laut wie der Gast:** Spricht der Gast über ein gleich lautes Echo, wird ein Teil seiner Worte ausgeblendet. Abhilfe ist getrenntes Routing.
+- **Kein akustischer Echo-Canceller:** Bei Lautsprechern im Raum Halbduplex verwenden.
+- **Kosten:** Im OpenAI-Satzende-Modus wird das Eingangssignal fortlaufend gestreamt. Wie viel davon abgerechnet wird, ist am echten Konto zu prüfen.
+- **Gleichzeitige Gedächtnis- und Debattenantwort:** Laut Doku zulässig (Gedächtnis läuft außerhalb des Gesprächs), aber ungetestet.
 
-| Komponente | Status | Hinweis |
-|---|---|---|
-| Automatische Antwort nach Sprechpause | ✅ Logik · ⚪ live | Standardmodus „Automatisch“, Redezeitlimit sendet statt verwirft |
-| Gestreamte Antwortwiedergabe (Start nach ca. 240 ms) | ✅ Logik · ⚪ WinMM | Mehrpuffer-Wiedergabe neu; auf echter Soundkarte ungeprüft |
-| OpenAI Realtime `gpt-realtime-2.1-mini` | ✅ Protokoll simuliert · ⚪ echte API | Modellname und Ereignisse laut aktueller Doku geprüft; kein echter API-Lauf möglich (kein Schlüssel in der Entwicklungsumgebung) |
-| Live-Mitschrift (Gast und NOVA) | ✅ simuliert · ⚪ echte API | `gpt-4o-mini-transcribe`, nur im Arbeitsspeicher |
-| Fairness, Warteschlange, Ausreden lassen | ✅ | Ungehörte Antwort wird verworfen und aus dem Kontext gelöscht |
-| NOVA unterbrechen (Kontext auf Gehörtes kürzen) | ✅ simuliert · ⚪ echte API | `conversation.item.truncate` |
-| Jetzt antworten | ✅ | |
-| Echo-Schutz (Halbduplex + Nachlauf) | ✅ Logik · ⚪ Hardware | Kein akustischer Echo-Canceller; Kopfhörer empfohlen |
-| KI-Persönlichkeiten (5 Stile, Intensität, Länge, Stimme, Sprache, Thema, Position) | ✅ | Eigene Persönlichkeiten speichern als Profile: ❌ |
-| KI-Hinweis beim Start (Transparenz) | ✅ | Sinngemäße Prüfung + 1 Wiederholung |
-| Dunkle Oberfläche, NOVA-Statussymbol, Wellenform, Statusanzeigen | 🟡 | Unter Mono/Linux gerendert geprüft; Darstellung unter Windows ungeprüft |
-| Einstellungen speichern, lokale Daten löschen | ✅ Logik · ⚪ Windows | `settings.json`, kein Schlüssel darin |
-| Geräteerkennung, Voicemeeter Standard/Banana | 🟡 | Aus 0.1.2 übernommen; Hardwaretest ausstehend |
-| Audio-Einrichtungsassistent (geführt, 8 Schritte) | ❌ | Bisher Einzelknöpfe; Assistent folgt in Phase 3/4 |
-| Modus A Mensch gegen NOVA | ✅ Logik · ⚪ live | |
-| Modus B Livestream-Debatte | 🟡 | Funktioniert mit Fairness aus; getrennte Busse nötig |
-| Modus C KI gegen KI | ❌ | Phase 3 |
-| Modus D Moderation | ❌ | „Ruhe in der Debatte“ vorhanden; echte Moderatorrolle fehlt |
-| NOVA stummschalten (zuhören ohne Antwort) | ❌ | Phase 3 |
-| Lange Debatten > Sitzungsdauer, automatischer Neuaufbau | ❌ | Bei Sitzungsende Fehlermeldung, Neustart per Klick |
-| Streaming-Profile TikTok LIVE Studio, OBS, Discord, lokal | 🟡 | Routing-Hilfe für Banana/Standard; feste Profile fehlen |
-| Installer (Inno Setup, ohne Adminrechte, .NET-Prüfung) | ⚪ | Skript und CI-Job fertig; Ergebnis hängt vom ersten CI-Lauf ab |
-| Update-Mechanismus | ❌ | Phase 7 |
-| Code-Signierung (SmartScreen) | ❌ | Benötigt ein gekauftes Zertifikat (OV/EV) |
+## Weitere Komponenten
 
-## Website und SaaS
-
-| Komponente | Status | Hinweis |
-|---|---|---|
-| Landingpage, Demo (gescriptet), Preise, FAQ | 🟡 | Aus Vorversion; `typecheck` und `build` erfolgreich |
-| Warteliste (Supabase) | 🟡 | Code vorhanden, nicht verbunden |
-| Registrierung, Login, Kundenkonto | ❌ | Phase 6 |
-| Stripe-Abos (Free / Creator / Pro) | ❌ | Phase 6 |
-| Lizenz- und Kontingentprüfung, Kostenkontrolle | ❌ | Phase 6; Server gibt kurzlebige Realtime-Sitzungsschlüssel aus |
-| Impressum, Datenschutzerklärung | ❌ | Platzhalter fehlen noch |
+| Komponente | Status |
+|---|---|
+| Persönlichkeiten (5 Stile, Intensität, Länge, Stimme, Sprache, Thema, Position) | ✅ · eigene Profile speichern ❌ |
+| Dunkle Oberfläche, Statussymbol, Wellenform, Statusanzeigen | 🟡 unter Mono geprüft, unter Windows ungesehen |
+| Einstellungen speichern, lokale Daten löschen | ✅ |
+| Geräteerkennung Voicemeeter Standard/Banana | 🟡 aus 0.1.2 |
+| Geführter Einrichtungsassistent | ❌ (Einzelschritte vorhanden: Geräte, Pegel, Testton, Echoprüfung) |
+| Modus C KI gegen KI | ❌ nach Live-Abnahme |
+| Modus D Moderation | ❌ nach Live-Abnahme |
+| Installer (Inno Setup), Windows-CI | ⚪ Skripte fertig, erster CI-Lauf ausstehend (GitHub-Repository fehlt) |
+| Update-Mechanismus, Code-Signierung | ❌ |
+| Website, Konten, Stripe, Lizenzserver | 🟡 Landingpage / ❌ Rest, bewusst nach der Live-Abnahme |
 
 ## Wichtige Architekturentscheidung für den Verkauf
 
-Heute trägt jeder Nutzer seinen **eigenen** OpenAI-Schlüssel ein. Für Abos darf kein gemeinsamer Schlüssel im Client stecken. Geplant: Die Windows-App meldet sich am Kundenkonto an, der Server prüft Abo und Restkontingent und stellt pro Debatte ein kurzlebiges Realtime-Client-Secret aus. Damit bleiben Schlüssel, Abrechnung und Limits serverseitig.
+Heute trägt jeder Nutzer seinen eigenen OpenAI-Schlüssel ein. Für Abos darf kein gemeinsamer Schlüssel im Client stecken: Die App soll sich am Kundenkonto anmelden und pro Debatte ein kurzlebiges Realtime-Client-Secret vom Server erhalten (Abo- und Kontingentprüfung serverseitig).
 
-## Nächste Schritte
+## Reihenfolge
 
-1. **Du:** Hardwaretest nach `docs/HARDWARE-TEST.md` (ca. 20 Minuten) und Rückmeldung mit `debate-ai.log`.
-2. Phase 3: Modus C (KI gegen KI), Modus D (Moderation), Stummschalten, Persönlichkeitsprofile, Einrichtungsassistent.
-3. Phase 5: feste Routing-Profile für TikTok LIVE Studio, OBS, Discord.
-4. Phase 6: Konten, Stripe, Lizenzserver mit kurzlebigen Sitzungsschlüsseln.
-5. Phase 7: Update-Mechanismus, Code-Signierung.
+1. **Live-Pflichtabnahme** nach `docs/HARDWARE-TEST.md` (du, mit einem Gast).
+2. Fehler aus der Abnahme beheben, Latenz optimieren.
+3. Geführter Einrichtungsassistent, Persönlichkeitsprofile.
+4. Danach: KI gegen KI, Moderation, Website-Konten, Stripe, Lizenzserver, Updates, Signierung.

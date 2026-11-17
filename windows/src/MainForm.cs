@@ -130,26 +130,32 @@ namespace DebateAI
 
     internal sealed class MainForm : Form
     {
-        public const string Version = "0.2.0";
+        public const string Version = "0.3.0";
 
-        private readonly ComboBox input = Combo(), output = Combo(), mode = Combo();
+        private readonly ComboBox input = Combo(), output = Combo(), mode = Combo(), patience = Combo(), barge = Combo();
         private readonly ComboBox style = Combo(), intensity = Combo(), length = Combo(), voice = Combo(), language = Combo();
         private readonly TextBox personaName = Field(30), topic = Field(300), position = Field(400);
         private readonly CheckBox offline = Check("Offline-Probe (nur Piepton, keine KI)");
-        private readonly CheckBox fairness = Check("Gesprächspartner ausreden lassen (Fairness)");
-        private readonly CheckBox transcribe = Check("Live-Mitschrift anzeigen (zusätzliche Transkriptionskosten)");
-        private readonly CheckBox informed = Check("Alle Sprecher wissen, dass NOVA eine KI ist und ihre Beiträge an OpenAI gehen, und sind einverstanden.");
+        private readonly CheckBox fairness = Check("Gesprächspartner ausreden lassen");
+        private readonly CheckBox transcribe = Check("Live-Mitschrift (für Gedächtnis und Echo-Schutz)");
+        private readonly CheckBox echoGuard = Check("Echo-Schutz: eigene Stimme ausblenden");
+        private readonly CheckBox memory = Check("Debattengedächtnis für lange Debatten");
+        private readonly CheckBox informed = Wide("Alle Sprecher wissen, dass NOVA eine KI ist und ihre Beiträge an OpenAI gehen, und sind einverstanden.");
         private readonly NumericUpDown threshold = Number(-60, -15, -40, 1), pauseMs = Number(300, 3000, 1200, 100),
-            guard = Number(400, 2500, 900, 100), turnSeconds = Number(5, 120, 30, 5);
+            guard = Number(400, 2500, 900, 100), turnSeconds = Number(5, 120, 30, 5),
+            bargeMs = Number(200, 2000, 500, 100), proactive = Number(0, 60, 0, 5);
+        private readonly ToolTip tips = new ToolTip();
         private readonly Button refresh = Button("Geräte neu laden"), setup = Button("Voicemeeter finden"), routing = Button("Routing-Hilfe"),
-            key = Button("API-Schlüssel"), log = Button("Protokollordner"), wipe = Button("Lokale Daten löschen"), monitor = Button("Pegel prüfen"), tone = Button("Testton");
+            key = Button("API-Schlüssel"), log = Button("Protokollordner"), wipe = Button("Lokale Daten löschen"),
+            echoCheck = Button("Echoprüfung"), report = Button("Live-Testbericht speichern"), monitor = Button("Pegel prüfen"), tone = Button("Testton");
         private readonly Button start = Big("Debatte starten", Theme.Green), pause = Big("Pause", Theme.Amber),
             interrupt = Big("NOVA unterbrechen", Theme.Magenta), push = Big("Jetzt antworten", Theme.Cyan),
-            moderate = Big("Ruhe in der Debatte", Theme.Violet), stop = Big("Not-Aus (Esc)", Theme.Red);
+            moderate = Big("Ruhe in der Debatte", Theme.Violet), stop = Big("Not-Aus (Esc)", Theme.Red), mute = Big("NOVA stumm", Theme.Amber);
         private readonly Label state = new Label { AutoSize = true, Font = new Font("Segoe UI", 16, FontStyle.Bold), ForeColor = Theme.Text };
         private readonly Label note = new Label { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Muted };
         private readonly Label warning = new Label { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Amber, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
         private readonly Label api = new Label { AutoSize = true, ForeColor = Theme.Muted };
+        private readonly Label live = new Label { AutoSize = true, ForeColor = Theme.Cyan };
         private readonly Label levelText = new Label { AutoSize = true, Text = "—", ForeColor = Theme.Muted };
         private readonly NovaOrb orb = new NovaOrb();
         private readonly WaveView wave = new WaveView();
@@ -201,6 +207,9 @@ namespace DebateAI
             stop.Click += delegate { session.Stop(false); };
             moderate.Click += delegate { session.Moderate(); };
             interrupt.Click += delegate { session.Interrupt(); };
+            mute.Click += delegate { session.Muted = !session.Muted; };
+            echoCheck.Click += delegate { session.CheckEcho(OpenInput, OpenOutput); };
+            report.Click += delegate { SaveReport(); };
             push.Click += async delegate { await session.Push(); };
             monitor.Click += delegate { session.CheckLevel(OpenInput); };
             tone.Click += delegate { session.TestTone(OpenOutput); };
@@ -222,8 +231,18 @@ namespace DebateAI
 
         private void Fill()
         {
-            mode.Items.AddRange(new object[] { "Automatisch · NOVA antwortet nach einer Sprechpause", "Push-to-talk · Aufnahme per Klick" });
+            mode.Items.AddRange(new object[] { "Automatisch · OpenAI erkennt das Satzende (empfohlen)", "Automatisch · lokal nach Sprechpause", "Push-to-talk · Aufnahme per Klick" });
             mode.SelectedIndex = 0;
+            patience.Items.AddRange(new object[] { "Geduldig · wartet bei Unsicherheit", "Ausgewogen", "Schnell · antwortet früh" });
+            patience.SelectedIndex = 0;
+            barge.Items.AddRange(new object[] { "NOVA stoppt sofort", "NOVA beendet ihren Satz", "Ignorieren (Halbduplex)" });
+            barge.SelectedIndex = 0;
+            echoGuard.Checked = true;
+            memory.Checked = true;
+            tips.SetToolTip(proactive, "Nach so vielen Sekunden Stille bringt NOVA die Debatte selbst voran. 0 = aus.");
+            tips.SetToolTip(bargeMs, "So lange muss der Gast sprechen, bis es als Unterbrechung zählt.");
+            tips.SetToolTip(transcribe, "Zeigt die Mitschrift und ist nötig für Gedächtnis und Selbstgespräch-Schutz. Kostet zusätzlich.");
+            tips.SetToolTip(echoCheck, "Spielt 4 Sekunden ein Testsignal auf NOVAs Ausgang und prüft, ob es am Eingang wieder ankommt.");
             style.Items.AddRange(Persona.Styles); style.SelectedIndex = 0;
             intensity.Items.AddRange(Persona.Intensities); intensity.SelectedIndex = 1;
             length.Items.AddRange(Persona.Lengths); length.SelectedIndex = 1;
@@ -253,17 +272,18 @@ namespace DebateAI
 
             left.Controls.Add(Section("1 · AUDIO",
                 Grid(Pair("Eingang · Gesprächspartner", input), Pair("Ausgang · NOVA-Stimme", output)),
-                Row(refresh, setup, routing), Row(monitor, tone, Caption("Pegel"), levelText)));
+                Row(refresh, setup, routing), Row(monitor, tone, echoCheck), Row(Caption("Pegel"), levelText)));
             left.Controls.Add(Section("2 · NOVA-PERSÖNLICHKEIT",
                 Grid(Pair("Name", personaName), Pair("Stil", style), Pair("Intensität", intensity), Pair("Antwortlänge", length),
                      Pair("Stimme", voice), Pair("Sprache", language), Pair("Thema", topic), Pair("NOVAs Position", position)),
                 transcribe));
             left.Controls.Add(Section("3 · GESPRÄCHSSTEUERUNG",
-                Grid(Pair("Sprecherwechsel", mode)),
-                fairness,
+                Grid(Pair("Sprecherwechsel", mode), Pair("Geduld beim Satzende", patience), Pair("Wenn der Gast unterbricht", barge)),
+                fairness, echoGuard, memory,
+                Row(Caption("Unterbrechung ab ms"), bargeMs, Caption("Nachfrage nach s"), proactive),
                 Row(Caption("Schwelle dBFS"), threshold, Caption("Sprechpause ms"), pauseMs),
                 Row(Caption("Nachlauf ms"), guard, Caption("Max. Redezeit s"), turnSeconds),
-                Row(offline), Row(key, log, wipe), informed));
+                Row(offline), Row(key, log, wipe), Row(report), informed));
 
             var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = Theme.Background };
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -276,7 +296,7 @@ namespace DebateAI
             status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
             status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             var texts = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Fill };
-            texts.Controls.Add(state); texts.Controls.Add(note); texts.Controls.Add(warning); texts.Controls.Add(api);
+            texts.Controls.Add(state); texts.Controls.Add(note); texts.Controls.Add(warning); texts.Controls.Add(api); texts.Controls.Add(live);
             // Status texts wrap to the space that is actually left next to the orb.
             status.SizeChanged += delegate
             {
@@ -291,7 +311,7 @@ namespace DebateAI
             right.Controls.Add(status, 0, 0);
 
             var controls = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(0, 10, 0, 6) };
-            controls.Controls.AddRange(new Control[] { start, pause, push, interrupt, moderate, stop });
+            controls.Controls.AddRange(new Control[] { start, pause, push, interrupt, mute, moderate, stop });
             right.Controls.Add(controls, 0, 1);
 
             var logPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = Theme.Field };
@@ -308,8 +328,11 @@ namespace DebateAI
         {
             return new SessionOptions
             {
-                Automatic = mode.SelectedIndex == 0, Threshold = (double)threshold.Value, GuardMs = (int)guard.Value,
-                Fairness = fairness.Checked, TurnSeconds = (int)turnSeconds.Value, PauseMs = (int)pauseMs.Value
+                Automatic = mode.SelectedIndex != 2, ServerTurns = mode.SelectedIndex == 0, Threshold = (double)threshold.Value,
+                GuardMs = (int)guard.Value, Fairness = fairness.Checked, TurnSeconds = (int)turnSeconds.Value, PauseMs = (int)pauseMs.Value,
+                BargeIn = barge.SelectedIndex == 1 ? BargeIn.Finish : barge.SelectedIndex == 2 ? BargeIn.Ignore : BargeIn.Stop,
+                BargeInMs = (int)bargeMs.Value, EchoGuard = echoGuard.Checked, ProactiveSeconds = (int)proactive.Value,
+                Memory = memory.Checked && transcribe.Checked, RoutingVerified = session.EchoCheckPassed == true
             };
         }
 
@@ -436,7 +459,11 @@ namespace DebateAI
         private IDebater CreateDebater()
         {
             if (offline.Checked) return new OfflineDebater();
-            return new RealtimeDebater(new WebSocketWire(LocalData.LoadKey()), CurrentPersona(), transcribe.Checked);
+            return new RealtimeDebater(new WebSocketWire(LocalData.LoadKey()), new LiveOptions
+            {
+                Persona = CurrentPersona(), Transcribe = transcribe.Checked, ServerTurns = mode.SelectedIndex == 0,
+                Patience = patience.SelectedIndex, Memory = session.MemoryForReconnect
+            });
         }
 
         private void Render()
@@ -448,15 +475,20 @@ namespace DebateAI
             bool hasOutput = output.SelectedItem != null;
             bool measuring = session.State == Phase.Meter;
             foreach (Control control in new Control[] { input, output, mode, threshold, guard, pauseMs, refresh, setup, offline, key, fairness,
-                turnSeconds, style, intensity, length, voice, language, personaName, topic, position, transcribe, wipe })
+                turnSeconds, style, intensity, length, voice, language, personaName, topic, position, transcribe, wipe, patience, barge, echoGuard,
+                memory, bargeMs, proactive })
                 control.Enabled = ready;
             informed.Enabled = ready && !offline.Checked;
             start.Enabled = ready && hasInput && hasOutput && (offline.Checked || informed.Checked && LocalData.HasKey);
             start.Text = session.State == Phase.Paused || session.State == Phase.Moderated ? "Fortsetzen" : "Debatte starten";
             monitor.Enabled = ready && hasInput;
+            echoCheck.Enabled = ready && hasInput && hasOutput;
+            mute.Enabled = !ready && session.State != Phase.Meter && session.State != Phase.Tone && session.State != Phase.EchoTest;
+            mute.Text = session.Muted ? "NOVA spricht wieder" : "NOVA stumm";
             tone.Enabled = hasOutput && (ready || measuring);
             push.Enabled = session.CanPush;
-            push.Text = mode.SelectedIndex == 0 || session.State == Phase.Recording ? "Jetzt antworten" : "Aufnahme starten";
+            push.Text = mode.SelectedIndex == 2 ? (session.State == Phase.Recording ? "Beitrag senden" : "Aufnahme starten") :
+                session.State == Phase.Recording ? "Jetzt antworten" : "NOVA soll sprechen";
             interrupt.Enabled = session.CanInterrupt;
             pause.Enabled = !ready && !measuring && session.State != Phase.Tone;
             stop.Enabled = session.State != Phase.Idle;
@@ -469,8 +501,9 @@ namespace DebateAI
                 case Phase.Moderated: state.Text = "Ruhe · Gast hat das Wort"; break;
                 case Phase.Meter: state.Text = "Routing prüfen"; break;
                 case Phase.Tone: state.Text = "Testton"; break;
+                case Phase.EchoTest: state.Text = "Echoprüfung · bitte still sein"; break;
                 case Phase.Connecting: state.Text = offline.Checked ? "Audiogeräte öffnen" : "Verbindung zu OpenAI wird aufgebaut"; break;
-                case Phase.Listening: state.Text = "NOVA hört zu"; break;
+                case Phase.Listening: state.Text = session.Muted ? "NOVA hört nur zu (stumm)" : "NOVA hört zu"; break;
                 case Phase.Recording: state.Text = "Gesprächspartner spricht"; break;
                 case Phase.Thinking: state.Text = offline.Checked ? "Antwortton vorbereiten" : "NOVA denkt nach"; break;
                 case Phase.Speaking: state.Text = offline.Checked ? "Antwortton läuft" : "NOVA spricht"; break;
@@ -493,7 +526,29 @@ namespace DebateAI
             api.Text = offline.Checked ? "API: offline" :
                 session.State == Phase.Idle || ready ? "API: " + (LocalData.HasKey ? "Schlüssel hinterlegt · " + RealtimeDebater.Model : "kein Schlüssel") :
                 session.State == Phase.Connecting ? "API: verbindet …" : "API: Verbindung aktiv · " + RealtimeDebater.Model + " · Antworten: " + session.Answers;
+            string echoState = session.EchoCheckPassed == true ? "Echoprüfung bestanden" : session.EchoCheckPassed == false ? "Echo erkannt" : "Echoprüfung offen";
+            live.Text = session.Metrics.Short() + " · Antworten " + session.Answers + " · " + echoState +
+                (session.ActiveBargeIn == BargeIn.Ignore && !ready ? " · Halbduplex" : "");
+            if (session.EchoCheckPassed == false && barge.SelectedIndex != 2 && ready)
+                warning.Text = "Echo erkannt: Routing korrigieren oder „Ignorieren (Halbduplex)“ wählen, sonst hört NOVA sich selbst.";
+            if (memory.Checked && !transcribe.Checked && ready)
+                warning.Text = "Das Debattengedächtnis braucht die Live-Mitschrift.";
             RenderLevel();
+        }
+
+        private void SaveReport()
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(LocalData.Folder);
+                string file = System.IO.Path.Combine(LocalData.Folder, "live-test-" + DateTime.Now.ToString("yyyyMMdd-HHmm") + ".md");
+                string settings = mode.Text + " · Geduld: " + patience.Text + " · Unterbrechung: " + barge.Text + " · Echo-Schutz " +
+                    (echoGuard.Checked ? "an" : "aus") + " · Echoprüfung: " + (session.EchoCheckPassed == true ? "bestanden" : session.EchoCheckPassed == false ? "Echo" : "nicht durchgeführt") +
+                    " · Modell " + RealtimeDebater.Model + (offline.Checked ? " (Offline-Probe)" : "");
+                System.IO.File.WriteAllText(file, session.Metrics.Report(Version, settings), System.Text.Encoding.UTF8);
+                Process.Start(new ProcessStartInfo { FileName = LocalData.Folder, UseShellExecute = true });
+            }
+            catch (Exception) { MessageBox.Show(this, "Der Testbericht konnte nicht gespeichert werden.", "DEBATE AI"); }
         }
 
         private void RenderLevel()
@@ -569,6 +624,8 @@ namespace DebateAI
             values["length"] = length.SelectedIndex; values["voice"] = voice.SelectedIndex; values["language"] = language.SelectedIndex;
             values["name"] = personaName.Text; values["topic"] = topic.Text; values["position"] = position.Text;
             values["fairness"] = fairness.Checked; values["transcribe"] = transcribe.Checked;
+            values["patience"] = patience.SelectedIndex; values["barge"] = barge.SelectedIndex; values["echoGuard"] = echoGuard.Checked;
+            values["memory"] = memory.Checked; values["bargeMs"] = (int)bargeMs.Value; values["proactive"] = (int)proactive.Value;
             values["threshold"] = (int)threshold.Value; values["pause"] = (int)pauseMs.Value; values["guard"] = (int)guard.Value; values["turn"] = (int)turnSeconds.Value;
             var inDevice = input.SelectedItem as Device; var outDevice = output.SelectedItem as Device;
             values["input"] = inDevice == null ? "" : inDevice.Name; values["output"] = outDevice == null ? "" : outDevice.Name;
@@ -584,6 +641,9 @@ namespace DebateAI
             topic.Text = LocalData.Text(values, "topic", ""); position.Text = LocalData.Text(values, "position", "");
             fairness.Checked = LocalData.Flag(values, "fairness", fairness.Checked);
             transcribe.Checked = LocalData.Flag(values, "transcribe", transcribe.Checked);
+            Select(patience, values, "patience"); Select(barge, values, "barge");
+            echoGuard.Checked = LocalData.Flag(values, "echoGuard", true); memory.Checked = LocalData.Flag(values, "memory", true);
+            Set(bargeMs, values, "bargeMs"); Set(proactive, values, "proactive");
             Set(threshold, values, "threshold"); Set(pauseMs, values, "pause"); Set(guard, values, "guard"); Set(turnSeconds, values, "turn");
             savedInput = LocalData.Text(values, "input", ""); savedOutput = LocalData.Text(values, "output", "");
         }
@@ -625,7 +685,7 @@ namespace DebateAI
             var box = new FlowLayoutPanel
             {
                 AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Panel,
-                Padding = new Padding(12, 10, 12, 10), Margin = new Padding(0, 0, 0, 12), Width = 490, MinimumSize = new Size(490, 0)
+                Padding = new Padding(12, 10, 12, 10), Margin = new Padding(0, 0, 0, 12), Width = 490, MinimumSize = new Size(490, 0), MaximumSize = new Size(490, 0)
             };
             box.Controls.Add(new Label { Text = heading, AutoSize = true, ForeColor = Theme.Cyan, Font = new Font("Segoe UI", 10, FontStyle.Bold), Margin = new Padding(3, 0, 3, 6) });
             foreach (Control item in items) box.Controls.Add(item);
@@ -671,6 +731,11 @@ namespace DebateAI
 
         private static ComboBox Combo() { return new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Theme.Field, ForeColor = Theme.Text, FlatStyle = FlatStyle.Flat }; }
         private static TextBox Field(int max) { return new TextBox { MaxLength = max, BackColor = Theme.Field, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle }; }
+        private static CheckBox Wide(string text)
+        {
+            return new CheckBox { Text = text, AutoSize = false, Size = new Size(460, 42), ForeColor = Theme.Text, Margin = new Padding(3, 4, 3, 4) };
+        }
+
         private static CheckBox Check(string text) { return new CheckBox { Text = text, AutoSize = true, ForeColor = Theme.Text, MaximumSize = new Size(470, 0), Margin = new Padding(3, 4, 3, 4) }; }
 
         private static NumericUpDown Number(int min, int max, int value, int step)

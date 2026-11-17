@@ -1,9 +1,9 @@
 ﻿; DEBATE AI · Windows-Installer (Inno Setup 6)
 ; Installiert pro Benutzer ohne Administratorrechte.
-; Build: ISCC.exe /DAppVersion=0.2.0 DebateAI.iss  (aus diesem Ordner, nach Neu-bauen.cmd)
+; Build: ISCC.exe /DAppVersion=0.3.0 DebateAI.iss  (aus diesem Ordner, nach Neu-bauen.cmd)
 
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.3.0"
 #endif
 
 [Setup]
@@ -36,6 +36,7 @@ Source: "..\DEBATE-AI.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\DEBATE-AI.exe.config"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ANLEITUNG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\docs\HARDWARE-TEST.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\docs\LIVE-SETUP.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\DEBATE AI"; Filename: "{app}\DEBATE-AI.exe"

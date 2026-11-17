@@ -1,12 +1,12 @@
 # DEBATE AI für Windows
 
-**Version 0.2.0 · NOVA, KI-Debattenpartnerin mit synthetischer Stimme**
+**Version 0.3.0 · NOVA, KI-Debattenpartnerin mit synthetischer Stimme**
 
-> Neu in 0.2.0: NOVA antwortet im Automatikmodus selbstständig und beginnt zu sprechen, sobald die ersten Antwortteile da sind. Details stehen in `CHANGELOG.md`, der Prüfstand in `docs/STATUS.md`.
+> Neu in 0.3.0: Live-Debatten im Vollduplex. NOVA hört auch zu, während sie spricht, erkennt das echte Satzende, lässt sich unterbrechen und merkt sich den Debattenverlauf. TikTok-Einrichtung: `docs/LIVE-SETUP.md`. Prüfstand: `docs/STATUS.md`.
 
 ## 0. Installation
 
-- **Installer:** `DEBATE-AI-Setup-0.2.0.exe` ausführen. Es sind keine Administratorrechte nötig; die App landet unter `%LOCALAPPDATA%\Programs\DEBATE AI` und im Startmenü.
+- **Installer:** `DEBATE-AI-Setup-0.3.0.exe` ausführen. Es sind keine Administratorrechte nötig; die App landet unter `%LOCALAPPDATA%\Programs\DEBATE AI` und im Startmenü.
 - **Ohne Installer:** `DEBATE-AI-portable.zip` entpacken und `DEBATE-AI.exe` starten (`DEBATE-AI.exe.config` muss daneben liegen).
 - **Selbst bauen:** `Neu-bauen.cmd` ausführen (nutzt den in Windows enthaltenen C#-Compiler von .NET Framework 4.8), danach `Selbsttest.cmd`.
 - **Systemanforderungen:** Windows 10 (ab 1903) oder Windows 11, .NET Framework 4.8 (bereits enthalten), Internetverbindung, ein OpenAI-API-Projekt mit Realtime-Zugriff und Guthaben.
@@ -33,20 +33,25 @@
 
 | Knopf | Wirkung |
 |---|---|
-| **Debatte starten / Fortsetzen** | Öffnet Geräte und eine neue OpenAI-Sitzung. |
-| **Pause** | Beendet die Sitzung; „Fortsetzen“ startet eine neue Sitzung mit frischem Kontext. |
-| **Jetzt antworten** | Beendet den laufenden Beitrag sofort und lässt NOVA antworten, ohne auf die Pause zu warten. Im Push-to-talk-Modus heißt er „Aufnahme starten“. |
-| **NOVA unterbrechen** | Stoppt NOVA sofort. Im Gesprächskontext bleibt nur der Teil, der tatsächlich zu hören war. |
-| **Ruhe in der Debatte** | Schließt die KI-Sitzung; der Gast hat das Wort, bis du fortsetzt. |
+| **Debatte starten / Fortsetzen** | Öffnet Geräte und eine neue OpenAI-Sitzung; NOVA sagt, dass sie eine KI ist. |
+| **Pause** | Beendet die Sitzung; „Fortsetzen“ startet neu mit frischem Kontext. |
+| **Jetzt antworten / NOVA soll sprechen** | Während der Gast spricht: Beitrag sofort beenden und NOVA antworten lassen. Sonst: NOVA ergreift selbst das Wort. |
+| **NOVA unterbrechen** | Stoppt NOVA sofort; im Kontext bleibt nur, was zu hören war. |
+| **NOVA stumm** | NOVA hört weiter zu (der Verlauf wächst), antwortet aber nicht. |
+| **Ruhe in der Debatte** | Schließt die KI-Sitzung, bis du fortsetzt. |
 | **Not-Aus (Esc)** | Beendet alles und gibt beide Audiogeräte frei. |
+| **Echoprüfung** | Spielt 4 s ein Testsignal auf NOVAs Ausgang und prüft, ob es am Eingang ankommt. Bestanden = Vollduplex ab dem ersten Wort. |
+| **Live-Testbericht speichern** | Speichert Latenzen und Zählwerte der Sitzung samt Abnahmetabelle im Protokollordner. |
 
-### Sprecherwechsel und „ausreden lassen“
+### Sprecherwechsel, Unterbrechen, Echo
 
-- Ein Beitrag beginnt nach etwa 120 ms Signal über der Schwelle und endet nach der eingestellten **Sprechpause**.
-- **Max. Redezeit** (Standard 30 s): Spricht jemand länger ohne Pause, wird der Beitrag an dieser Stelle **gesendet** (in 0.1.x wurde er verworfen, sodass NOVA bei durchgehend laufenden Videos nie antwortete).
-- **Gesprächspartner ausreden lassen (Fairness):** Ist NOVAs Antwort fertig, während noch jemand spricht, wartet sie bis zu 6 s auf eine Pause. Spricht die Person weiter (mehr als 0,6 s Sprache), verwirft NOVA ihre noch ungehörte Antwort, hört weiter zu und beantwortet danach beides zusammen. Kein Beitrag geht verloren.
-- **Bei Videos oder Streams ohne Pausen** Fairness ausschalten. NOVA antwortet dann nach jedem Beitrag sofort.
-- Während NOVA spricht und in der Nachlaufzeit (Standard 900 ms) ist der Eingang gesperrt (**Echo-Schutz**). Was in dieser Zeit gesagt wird, hört NOVA nicht. Mit **NOVA unterbrechen** gibst du sofort das Wort zurück.
+- **Automatisch · OpenAI erkennt das Satzende (empfohlen):** Das Eingangssignal wird fortlaufend gestreamt. OpenAI erkennt am Inhalt, ob der Satz zu Ende ist. Die **Geduld** bestimmt, wie lange bei Unsicherheit gewartet wird.
+- **Automatisch · lokal nach Sprechpause:** Ende nach der eingestellten Sprechpause (Standard 1,2 s). Gut für Videos und Musik im Hintergrund, mit Fairness aus.
+- **Wenn der Gast unterbricht:** „NOVA stoppt sofort“, „NOVA beendet ihren Satz“ (danach antwortet sie auf den Einwurf) oder „Ignorieren (Halbduplex)“. Als Unterbrechung zählt Sprache ab der eingestellten Dauer (Standard 500 ms).
+- **Gesprächspartner ausreden lassen:** Eine fertige Antwort wartet bis zu 6 s auf eine Pause. Spricht die Person weiter, verwirft NOVA ihre ungehörte Antwort und antwortet danach auf alles zusammen.
+- **Echo-Schutz:** NOVAs eigene Stimme am Eingang wird erkannt und ignoriert. Ohne bestandene Echoprüfung hört NOVA in den ersten ca. 1,7 s ihrer eigenen Antworten noch nicht zu. Wiederholt der „Gast“ in der Mitschrift NOVAs letzten Satz, schaltet die App sofort auf Halbduplex.
+- **Debattengedächtnis:** Alle 4 Antworten entsteht ein kurzes Protokoll (Behauptungen, Gegenargumente, Zugeständnisse, offene Fragen). Bricht die Verbindung ab oder ist die Sitzung 55 Minuten alt, startet eine neue Sitzung mit diesem Protokoll.
+- **Nachfrage nach s:** Nach so viel Stille bringt NOVA die Debatte einmal selbst voran (0 = aus).
 
 **Pegel einstellen.** Spricht der Gast leise, die Schwelle z. B. auf −48 dBFS senken. Löst Raumrauschen aus, auf z. B. −32 dBFS erhöhen. Die Erkennung reagiert auf Lautstärke und kann Sprache nicht von Musik unterscheiden.
 
@@ -88,15 +93,15 @@ Wenn beim KI-Test auch B2 ausschlägt, stoppe und korrigiere zuerst die Bus-Scha
 ## 5. Architektur und Daten
 
 ```text
-WinMM-Eingang → PCM 24 kHz mono → Pegel / Sprecherwechsel (lokal)
-                                   ↓ abgeschlossener Beitrag
-                    OpenAI Realtime (WebSocket), gpt-realtime-2.1-mini
-                                   ↓ Antwort-Audio als Stream
-WinMM-Ausgang ← Wiedergabe ab ca. 240 ms Puffer ← Eingangssperre + Nachlauf
+WinMM-Eingang → 24 kHz mono → Echo-Erkennung → Unterbrechungs-Erkennung (lokal)
+                                      ↓ fortlaufender Audio-Stream
+              OpenAI Realtime (WebSocket), gpt-realtime-2.1-mini, semantische Satzende-Erkennung
+                                      ↓ NOVA-Antwort als Audio-Stream
+WinMM-Ausgang ← Wiedergabe ab ca. 240 ms Puffer → Referenz für die Echo-Erkennung
 ```
 
-- **Audio:** Ein- und Ausgang werden ausdrücklich gewählt; WinMM mit 48 kHz (Fallback 24 kHz), Umrechnung auf 24 kHz mono. Halbduplex: Während NOVA spricht, wird der Eingang verworfen.
-- **Kontext:** Innerhalb einer Sitzung behält das Modell den Gesprächsverlauf. Ungehörte Antworten werden aus dem Verlauf gelöscht, unterbrochene auf den gehörten Teil gekürzt. „Fortsetzen“ startet mit frischem Kontext.
+- **Audio:** Ein- und Ausgang werden ausdrücklich gewählt; WinMM mit 48 kHz (Fallback 24 kHz), Umrechnung auf 24 kHz mono. Vollduplex, außer bei „Ignorieren (Halbduplex)“.
+- **Kontext:** Der Gesprächsverlauf bleibt in der Sitzung; ungehörte Antworten werden gelöscht, unterbrochene gekürzt. Das Debattenprotokoll überbrückt Sitzungswechsel.
 - **Mitschrift:** Optional über `gpt-4o-mini-transcribe` (zusätzliche Kosten). Sie bleibt nur im Arbeitsspeicher und wird nie auf die Festplatte geschrieben.
 - **Schlüssel:** `%LOCALAPPDATA%\DebateAI\api-key.dpapi`, DPAPI-verschlüsselt für das aktuelle Benutzerkonto.
 - **Einstellungen:** `%LOCALAPPDATA%\DebateAI\settings.json` (nur Einstellungen, kein Schlüssel, keine Gesprächsinhalte).

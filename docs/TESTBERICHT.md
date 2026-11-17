@@ -1,66 +1,72 @@
-# Testbericht · DEBATE AI 0.2.0
+# Testbericht · DEBATE AI 0.3.0
 
 Datum: 17.11.2026 · Umgebung: Linux-Entwicklungsumgebung, Mono JIT compiler version 6.8.0.105 (Deb
 
-## Was geprüft wurde
+## Ergebnis auf einen Blick
 
-| Prüfung | Werkzeug | Ergebnis |
-|---|---|---|
-| Ausgangsstand 0.1.2 kompiliert als C# 5 (Sprachstand des Windows-.NET-Framework-Compilers) | `mcs -langversion:5 -warnaserror+` | bestanden |
-| Ausgangsstand 0.1.2: 12 von 13 Selbsttests | Mono | bestanden (WinMM-Test nur unter Windows möglich) |
-| Neuer Stand 0.2.0 kompiliert als C# 5 ohne Warnungen | `mcs -langversion:5 -warnaserror+` | bestanden |
-| Neuer Stand 0.2.0: 21 Logik- und Protokolltests | Mono, `tests/Tests.cs` | **21/21 bestanden**, Windows-Gerätetest übersprungen |
-| Oberfläche startet und ist lesbar angeordnet | Mono WinForms auf virtuellem Bildschirm (Xvfb), Screenshot | bestanden; Darstellung unter Windows kann abweichen |
-| Website `npm run typecheck` und `npm run build` | Node 22 | bestanden |
+| Prüfung | Ergebnis |
+|---|---|
+| Kompilierung als C# 5 ohne Warnungen (Sprachstand des Windows-Compilers) | bestanden |
+| 32 automatische Logik-, Protokoll- und Signaltests (+1 Windows-Test übersprungen) | **32/32 bestanden, 5 Wiederholungen ohne Ausfall** |
+| Oberfläche startet, Anordnung lesbar (Mono-WinForms auf virtuellem Bildschirm) | bestanden |
+| Website `typecheck` und `build` | bestanden (Stand 0.2.0, unverändert) |
+| **Live-Pflichtabnahme mit echtem Menschen über TikTok LIVE** | **nicht durchgeführt, ungetestet** |
+| Echte Windows-Audiogeräte, echte OpenAI-Realtime-Sitzung, Latenz | **nicht durchgeführt, ungetestet** |
 
-## Abgedeckte Testfälle (Auszug)
+## Was die automatischen Tests abdecken
 
-- Automatischer Dialog: Sprache → Pause → Antwort → Nachlauf → zuhören; NOVAs eigene Ausgabe erreicht den Sprecherwechsel nicht (Echo-Sperre).
-- Redezeitlimit sendet den Beitrag (Regression des Hauptfehlers aus 0.1.x).
-- Fairness: fertige Antwort wartet auf Pause; kurzes Geräusch verwirft sie nicht; Weitersprechen verwirft die ungehörte Antwort, setzt die Aufnahme fort und beantwortet sie danach.
-- Streaming: Wiedergabe beginnt vor dem Ende der Antwort; das gesamte Audio wird wiedergegeben.
-- Unterbrechen: Wiedergabe stoppt, Kontext wird auf die gehörten Millisekunden gekürzt, Rest der Antwort wird nicht abgespielt.
-- Realtime-Protokoll mit simuliertem Server: Sitzungskonfiguration (Format 24 kHz, Stimme, Transkription), Chunking, Mitschrift-Ereignisse, `conversation.item.delete` und `conversation.item.truncate`, leerer Beitrag, API-Fehler ohne Weitergabe vertraulicher Fehlertexte, Abbruch.
-- Persona: Stil, Intensität, Länge, Thema, Position, Steuerzeichen-Filter, Sicherheitsregeln am Ende, KI-Hinweis-Erkennung.
-- Pause, Ruhe, Not-Aus, Fehler mit anschließendem Neustart, verspätete Antworten nach Pause.
+- **Sprecherwechsel:** lokal (Pegel und Pause) mit Upload während des Sprechens; semantisch über OpenAI-Ereignisse; Redezeitlimit.
+- **Vollduplex und Unterbrechung:** Gast unterbricht → NOVA stoppt, Kontext wird auf die gehörten Millisekunden gekürzt, Rest wird nicht abgespielt; Variante „Satz beenden“ mit Vormerkung; Halbduplex; Rückkehr zum Zuhören, wenn keine Sprache bestätigt wird.
+- **Warteschlange:** Weitersprechen verwirft ungehörte Antworten (lokal und OpenAI-Modus); neue Antwort erst nach Ende der alten; beide Beiträge werden beantwortet.
+- **Echo:** Echo-Erkennung mit synthetischem, sprachähnlichem Signal: Echo (200–600 ms Verzögerung, 10–30 % Pegel) ≥ 80 % erkannt; unabhängiger Gast ≤ 5 % fälschlich als Echo. NOVAs eigenes Echo löst während einer laufenden Antwort keine Unterbrechung aus. Echoprüfung meldet Echo / kein Echo / unklar korrekt. Selbstgespräch-Schutz schaltet auf Halbduplex.
+- **Debattenführung:** proaktive Nachfrage genau einmal pro Stille; Stummschalten; Gedächtnis-Anforderung nach 4 Antworten und Übernahme in die Sitzung; neue Sitzung nach Verbindungsende mit Gesprächsstand.
+- **Fehler:** Zeitlimit ohne Antwort, einzelne vs. wiederholte Fehlschläge, ungültiger Schlüssel, Guthaben, Warnungen ohne Abbruch, Verbindungsende, keine vertraulichen Fehlertexte in Meldungen.
+- **Realtime-Protokoll** gegen einen simulierten Server: Sitzungskonfiguration (`semantic_vad`, `create_response:false`, `interrupt_response:false`, Geduld, Retention-Ratio, Transkription, Stimme), KI-Hinweis außerhalb des Verlaufs, Audio-Streaming in Stücken, Antwortzuordnung per `response_id`, Gedächtnis als Text-Antwort außerhalb des Verlaufs, `response.cancel`, `conversation.item.delete`, `conversation.item.truncate`.
+- **Latenzmessung** und Live-Testbericht.
 
-## Was NICHT geprüft wurde
+## Grenzen dieser Tests
 
-Diese Punkte sind implementiert, aber **ungeprüft**, weil die Entwicklungsumgebung weder Windows-Audio noch einen OpenAI-Schlüssel hat:
+- Die Echo-Tests nutzen synthetische Signale, keine echte Raumakustik oder Voicemeeter-Latenz.
+- Das Realtime-Protokoll ist gegen die aktuelle OpenAI-Dokumentation implementiert, aber nicht gegen den echten Server getestet.
+- Die Qualität der Debattenführung (Gegenargumente, Gedächtnis, Umgang mit Provokationen) lässt sich nur im echten Gespräch beurteilen.
 
-- Echte Windows-Kompilierung mit `csc.exe` und Ausführung von `Selbsttest.cmd` → erfolgt automatisch im GitHub-Actions-Job `windows`, sobald das Repository hochgeladen ist.
-- WinMM-Aufnahme und gestreamte Wiedergabe auf echter Soundkarte, Voicemeeter, virtuelle Kabel.
-- Echte OpenAI-Realtime-Sitzung: Antwortqualität, Latenz, Kosten, Verhalten bei Netzwerkabbruch.
-- DPAPI wurde nur mit Monos Ersatzimplementierung getestet; der Windows-Test läuft in der CI.
-- Installer (Inno Setup) → CI-Job.
-- TikTok LIVE Studio, OBS, Discord.
-
-Für diese Punkte gibt es die Schritt-für-Schritt-Abnahme in `docs/HARDWARE-TEST.md`.
+Die Live-Abnahme ist in `docs/HARDWARE-TEST.md` beschrieben; die App erzeugt dafür einen Bericht mit gemessener Latenz.
 
 ## Rohausgabe des Testlaufs
 
 ```text
 OK  PCM-Konvertierung und Testton
 OK  Spracherkennung, kurze Signale und Aufnahmelimit
-OK  Automatischer Dialog mit Rückkopplungssperre
-OK  Redezeitlimit sendet den Beitrag statt ihn zu verwerfen
+OK  Lokaler Sprecherwechsel: Streaming-Upload, Antwort, Halbduplex
+OK  Redezeitlimit sendet den Beitrag
+OK  Semantischer Sprecherwechsel (OpenAI) mit Latenzmessung
 OK  Fairness: fertige Antwort wartet auf Sprechpause
-OK  Fairness: Weitersprechen verwirft ungehörte Antwort, Warteschlange
-OK  Streaming: NOVA spricht vor dem Ende der Antwort
-OK  NOVA unterbrechen kürzt die Antwort im Kontext
-OK  Jetzt antworten im Automatikmodus
-OK  Persönlichkeit, Position, Antwortlänge und KI-Hinweis
-OK  Ruhe bricht Antwort ab und verwirft verspätetes Audio
-OK  Push-to-test, Pause und verspätete Antwort
+OK  Warteschlange: Weitersprechen verwirft ungehörte Antwort (OpenAI-Turns)
+OK  Warteschlange: Weitersprechen verwirft ungehörte Antwort (lokal)
+OK  Vollduplex: Gast unterbricht, NOVA stoppt und kürzt den Kontext
+OK  Vollduplex: Gast unterbricht, NOVA beendet ihren Satz und antwortet danach
+OK  Ohne Echoprüfung: Unterbrechung erst nach Aufwärmen der Echo-Erkennung
+OK  Echo-Schutz: NOVAs eigene Stimme löst keine Unterbrechung aus
+OK  Selbstgespräch-Schutz schaltet auf Halbduplex
+OK  NOVA bringt die Debatte nach Stille voran
+OK  NOVA stumm: hört zu, antwortet nicht
+OK  Debattengedächtnis wird erstellt und übernommen
+OK  Verbindungsabbruch: neue Sitzung mit Gedächtnis
+OK  Fehlgeschlagene Antworten und Zeitlimit
+OK  NOVA unterbrechen per Knopf
+OK  Jetzt antworten und NOVA soll sprechen
+OK  Push-to-talk, Pause und verspätete Antwort
+OK  Ruhe in der Debatte, Not-Aus, Fehler und Neustart
 OK  Pegel und Testton ohne Debattensitzung
-OK  Verbindungsfehler und anschließender Neustart
-OK  Realtime-Sitzung, Chunking und Antwort-Audio mit Testserver-Ereignissen
-OK  Fehlender KI-Hinweis, API-Fehler und Abbruch
-OK  Realtime: Mitschrift, Löschen und Kürzen ungehörter Antworten
-OK  Realtime: leerer Beitrag fordert nur eine Antwort an
+OK  Echoprüfung: Echo, kein Echo, unklar
+OK  Echo-Erkennung unterscheidet Echo und Gast
+OK  Live-Messwerte und Testprotokoll
+OK  Persönlichkeit, Debattenmethode, Gedächtnis, KI-Hinweis
+OK  Realtime: Sitzungsaufbau, semantische VAD, KI-Hinweis
+OK  Realtime: Live-Ereignisse, Antwort-Audio, Gedächtnis, Kürzen
+OK  Realtime: API-Fehler, Warnungen und Verbindungsende
 OK  Nutzungsprotokoll enthält ausschließlich Tokenzahlen
 OK  Windows-Verschlüsselung für aktuelles Benutzerkonto
     Übersprungen: nur unter Windows ausführbar (WinMM).
 OK  Windows-Geräteliste und Fensteraufbau
-Exit: 0
 ```
