@@ -140,7 +140,7 @@ namespace DebateAI
                         await Task.Run(async () =>
                         {
                             if (todo.Contains("whisper"))
-                                await Downloader.Zip(Downloader.AssetUrl(LocalSources.WhisperReleases, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "blas", "cuda", "vulkan", "openvino" }),
+                                await Downloader.Zip(Downloader.AssetUrl(LocalSources.WhisperReleases, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "blas", "cuda", "vulkan", "openvino", "cublas", "arm", "win32" }),
                                     LocalPaths.WhisperFolder, report, token);
                             if (todo.Contains("whisperModel"))
                                 await Downloader.File(LocalSources.WhisperModelBase + target.Whisper + ".bin", LocalPaths.WhisperModel(target.Whisper), report, token);

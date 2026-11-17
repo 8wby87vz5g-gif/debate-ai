@@ -31,7 +31,7 @@ namespace DebateAI
     // Official download sources. Nothing is downloaded without the user's click.
     internal static class LocalSources
     {
-        public const string WhisperReleases = "https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest";
+        public const string WhisperReleases = "https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=15";
         public const string PiperRelease = "https://api.github.com/repos/rhasspy/piper/releases/tags/2023.11.14-2";
         public const string WhisperModelBase = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-";
         public const string VoiceBase = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/";
@@ -199,34 +199,58 @@ namespace DebateAI
             return request;
         }
 
-        public static List<KeyValuePair<string, string>> Assets(string apiUrl)
+        // A single release object or a release list (newest first). For a list,
+        // drafts and pre-releases are skipped; every release keeps its assets so
+        // AssetUrl can fall back to an older release when the newest has no files yet.
+        public static List<List<KeyValuePair<string, string>>> Releases(string json)
         {
-            var assets = new List<KeyValuePair<string, string>>();
-            using (var response = (HttpWebResponse)Request(apiUrl).GetResponse())
-            using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+            var result = new List<List<KeyValuePair<string, string>>>();
+            object parsed = new JavaScriptSerializer { MaxJsonLength = 32 * 1024 * 1024 }.DeserializeObject(json);
+            var list = parsed as object[];
+            if (list == null) list = new[] { parsed };
+            foreach (object item in list)
             {
-                var release = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 }.Deserialize<Dictionary<string, object>>(reader.ReadToEnd());
-                object list;
-                if (release.TryGetValue("assets", out list) && list is System.Collections.ArrayList)
-                    foreach (object item in (System.Collections.ArrayList)list)
+                var release = item as Dictionary<string, object>;
+                if (release == null) continue;
+                object flag;
+                if (release.TryGetValue("draft", out flag) && flag is bool && (bool)flag) continue;
+                if (release.TryGetValue("prerelease", out flag) && flag is bool && (bool)flag) continue;
+                var assets = new List<KeyValuePair<string, string>>();
+                object files;
+                if (release.TryGetValue("assets", out files) && files is object[])
+                    foreach (object entry in (object[])files)
                     {
-                        var asset = item as Dictionary<string, object>;
+                        var asset = entry as Dictionary<string, object>;
                         object name, url;
                         if (asset != null && asset.TryGetValue("name", out name) && asset.TryGetValue("browser_download_url", out url))
                             assets.Add(new KeyValuePair<string, string>(name as string, url as string));
                     }
+                result.Add(assets);
             }
-            return assets;
+            return result;
+        }
+
+        public static string PickUrl(string json, string preferred, string[] required, string[] avoid)
+        {
+            foreach (List<KeyValuePair<string, string>> assets in Releases(json))
+            {
+                var names = new List<string>();
+                foreach (KeyValuePair<string, string> asset in assets) names.Add(asset.Key);
+                string pick = LocalSources.PickAsset(names, preferred, required, avoid);
+                foreach (KeyValuePair<string, string> asset in assets) if (asset.Key == pick) return asset.Value;
+            }
+            return null;
         }
 
         public static string AssetUrl(string apiUrl, string preferred, string[] required, string[] avoid)
         {
-            List<KeyValuePair<string, string>> assets = Assets(apiUrl);
-            var names = new List<string>();
-            foreach (KeyValuePair<string, string> asset in assets) names.Add(asset.Key);
-            string pick = LocalSources.PickAsset(names, preferred, required, avoid);
-            foreach (KeyValuePair<string, string> asset in assets) if (asset.Key == pick) return asset.Value;
-            throw new AppError("Im offiziellen Release wurde keine passende Windows-Datei gefunden (" + apiUrl + ").");
+            string json;
+            using (var response = (HttpWebResponse)Request(apiUrl).GetResponse())
+            using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                json = reader.ReadToEnd();
+            string url = PickUrl(json, preferred, required, avoid);
+            if (url != null) return url;
+            throw new AppError("In den offiziellen Releases wurde keine passende Windows-Datei gefunden (" + apiUrl + ").");
         }
 
         public static async Task File(string url, string target, Action<string> progress, CancellationToken token)

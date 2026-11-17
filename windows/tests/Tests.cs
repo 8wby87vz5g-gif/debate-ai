@@ -967,6 +967,12 @@ namespace DebateAI
         private static void TestLocalSetup()
         {
             string reason;
+            string releases = "[{\"tag_name\":\"v1.9.5\",\"draft\":false,\"prerelease\":false,\"assets\":[]},"
+                + "{\"tag_name\":\"v1.9.4-rc\",\"prerelease\":true,\"assets\":[{\"name\":\"whisper-bin-x64.zip\",\"browser_download_url\":\"https://x/rc.zip\"}]},"
+                + "{\"tag_name\":\"v1.9.3\",\"prerelease\":false,\"assets\":[{\"name\":\"whisper-cublas-12-bin-x64.zip\",\"browser_download_url\":\"https://x/cuda.zip\"},{\"name\":\"whisper-bin-x64.zip\",\"browser_download_url\":\"https://x/cpu.zip\"}]}]";
+            Check(Downloader.PickUrl(releases, "whisper-bin-x64.zip", new[] { "bin", "x64" }, new[] { "cublas", "cuda" }) == "https://x/cpu.zip", "Release ohne Dateien nicht übersprungen");
+            Check(Downloader.PickUrl("{\"assets\":[{\"name\":\"piper_windows_amd64.zip\",\"browser_download_url\":\"https://x/p.zip\"}]}", "piper_windows_amd64.zip", new[] { "windows" }, new string[0]) == "https://x/p.zip", "Einzelnes Release nicht gelesen");
+            Check(Downloader.PickUrl("[]", "a.zip", new string[0], new string[0]) == null, "Leere Releaseliste");
             LocalModels laptop = ModelAdvisor.Recommend(new HardwareInfo { RamGb = 15.7, Cores = 8, Cpu = "Intel Core i5" }, out reason);
             Check(laptop.Llm == "gemma3:4b" && laptop.Whisper == "base" && laptop.Threads == 7 && reason.Contains("Prozessor"), "Empfehlung Laptop falsch");
             var gaming = new HardwareInfo { RamGb = 32, Cores = 16 };

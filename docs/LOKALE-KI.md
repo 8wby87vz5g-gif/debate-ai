@@ -20,7 +20,7 @@ Gast-Audio → lokale Satzende-Erkennung (Pegel + Pause) → whisper.cpp (Sprach
 |---|---|---|
 | Ollama | ollama.com (Installation durch dich) | MIT |
 | Sprachmodell | über Ollama, z. B. `gemma3:4b`, `qwen3:8b`, `llama3.2:3b` | Lizenz des Herstellers (z. B. Gemma-Lizenz) |
-| whisper.cpp | GitHub ggml-org/whisper.cpp, aktuelles Release, `whisper-bin-x64.zip` | MIT |
+| whisper.cpp | GitHub ggml-org/whisper.cpp, neuestes Release **mit** `whisper-bin-x64.zip` (das aktuelle v1.9.5 enthält keine Windows-Dateien; die App nimmt dann automatisch das letzte Release mit Windows-Build) | MIT |
 | Whisper-Modell | Hugging Face ggerganov/whisper.cpp, `ggml-tiny/base/small.bin` (mehrsprachig) | MIT |
 | Piper | GitHub rhasspy/piper, Release 2023.11.14-2, `piper_windows_amd64.zip` | MIT |
 | Stimmen | Hugging Face rhasspy/piper-voices v1.0.0 (Thorsten, Kerstin, Ramona) | siehe MODEL_CARD je Stimme |

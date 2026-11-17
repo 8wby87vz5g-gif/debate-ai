@@ -148,9 +148,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          assets=$(gh api repos/ggml-org/whisper.cpp/releases/latest --jq '.tag_name + " " + ([.assets[].name]|join(" "))')
-          echo "whisper.cpp: $assets"
-          echo "$assets" | grep -q "whisper-bin-x64.zip" || { echo "::error::whisper-bin-x64.zip fehlt im aktuellen whisper.cpp-Release"; exit 1; }
+          # Wie die App: neuestes reguläres Release, das die Windows-CPU-Datei enthält
+          found=$(gh api "repos/ggml-org/whisper.cpp/releases?per_page=15" --jq '[.[] | select((.draft|not) and (.prerelease|not)) | select(any(.assets[]; .name=="whisper-bin-x64.zip"))][0].tag_name // empty')
+          echo "whisper.cpp mit whisper-bin-x64.zip: ${found:-keins}"
+          [ -n "$found" ] || { echo "::error::whisper-bin-x64.zip in keinem der letzten 15 whisper.cpp-Releases"; exit 1; }
           piper=$(gh api repos/rhasspy/piper/releases/tags/2023.11.14-2 --jq '[.assets[].name]|join(" ")')
           echo "Piper: $piper"
           echo "$piper" | grep -q "piper_windows_amd64.zip" || { echo "::error::piper_windows_amd64.zip fehlt"; exit 1; }
