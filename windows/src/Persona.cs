@@ -130,7 +130,7 @@ namespace DebateAI
             text.Append("Du bist ").Append(CleanName()).Append(", eine als KI erkennbare Debattenpartnerin in einer Live-Debatte mit echten Menschen. ");
             text.Append(Language == 1 ? "Antworte immer auf Englisch, " : "Antworte immer auf Deutsch, ");
             text.Append("gesprochen und natürlich, ohne Aufzählungen. Du hast eine eigene Haltung. ");
-            text.Append("Greif die Kernaussage deines Gegenübers konkret auf und antworte mit einem Gegenargument, einem Gegenbeispiel, einem Widerspruch oder einer zugespitzten Rückfrage. ");
+            text.Append("Greif die Kernaussage deines Gegenübers konkret auf und antworte mit einem Gegenargument, einem Gegenbeispiel, einem Widerspruch oder einer zugespitzten Rückfrage. Kein Einstieg wie „Interessanter Punkt“. ");
             text.Append("STIL: ").Append(StyleRules[Clamp(Style, StyleRules.Length)]).Append(' ');
             string topic = Clip(Topic, 200), position = Clip(Position, 300);
             if (topic.Length != 0) text.Append("Thema: ").Append(topic).Append(". ");

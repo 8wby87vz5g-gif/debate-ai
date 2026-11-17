@@ -807,12 +807,13 @@ namespace DebateAI
         {
             public readonly Queue<string> Answers = new Queue<string>();
             public readonly List<List<ChatMessage>> Requests = new List<List<ChatMessage>>();
-            public Task Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token)
+            public bool Cut;
+            public Task<bool> Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token)
             {
                 lock (Requests) Requests.Add(new List<ChatMessage>(messages));
                 string answer = Answers.Count == 0 ? "Gut." : Answers.Dequeue();
                 foreach (string word in answer.Split(' ')) { token.ThrowIfCancellationRequested(); onDelta(word + " "); }
-                return Task.FromResult(0);
+                return Task.FromResult(!Cut);
             }
             public readonly List<string> Warmed = new List<string>();
             public Task Warm(string system, CancellationToken token) { lock (Warmed) Warmed.Add(system); return Task.FromResult(0); }
@@ -905,6 +906,18 @@ namespace DebateAI
                 Check(second.Count == 4 && second[2].Role == "assistant" && second[2].Content.StartsWith("Das sehe ich anders.") &&
                     second[3].Content == "Freiheit ist wichtiger.\n(Hinweis an dich: Bringe die Debatte voran.)" &&
                     second[0].Content == llm.Requests[0][0].Content, "Gesprächsverlauf oder Zusatzanweisung fehlt");
+                llm.Cut = true;
+                llm.Answers.Enqueue("Ein ganzer Satz steht hier. Und dieser wurde abgeschnitten um");
+                tts.Spoken.Clear();
+                ai.Append(Long(600)); ai.Commit(); ai.Respond(new AudioSink(), null);
+                Drain(ai, LiveKind.AnswerDone);
+                Check(tts.Spoken.Count == 1 && tts.Spoken[0] == "Ein ganzer Satz steht hier.", "Abgeschnittener Satz wurde gesprochen: " + string.Join("|", tts.Spoken));
+                llm.Answers.Enqueue("Nur ein Halbsatz ohne Ende");
+                tts.Spoken.Clear();
+                ai.Append(Long(600)); ai.Commit(); ai.Respond(new AudioSink(), null);
+                Drain(ai, LiveKind.AnswerDone);
+                Check(tts.Spoken.Count == 1, "Einziger (abgeschnittener) Satz muss trotzdem gesprochen werden");
+                llm.Cut = false;
                 Check(llm.Warmed.Count == 1 && llm.Warmed[0] == llm.Requests[0][0].Content, "Lokales Modell wurde nicht mit denselben Anweisungen vorgewärmt");
                 Check(LocalDebater.WindowStart(16) == 0 && LocalDebater.WindowStart(19) == 0 && LocalDebater.WindowStart(20) == 12 && LocalDebater.WindowStart(31) == 12 &&
                     LocalDebater.WindowStart(32) == 24 && 32 - LocalDebater.WindowStart(32) >= 8, "Verlaufsfenster springt nicht in Blöcken");

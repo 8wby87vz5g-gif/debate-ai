@@ -21,7 +21,8 @@ namespace DebateAI
     internal interface IChatModel
     {
         // Streams the answer; onDelta receives text pieces as they are generated.
-        Task Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token);
+        // Returns false when the answer was cut off by the token limit (unfinished last sentence).
+        Task<bool> Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token);
         // Loads the model and pre-processes the fixed instructions so the first answer starts sooner.
         Task Warm(string system, CancellationToken token);
     }
@@ -93,6 +94,7 @@ namespace DebateAI
     internal sealed class SentenceSplitter
     {
         private readonly StringBuilder buffer = new StringBuilder();
+        public bool Emitted { get; private set; }
 
         public List<string> Add(string delta)
         {
@@ -115,7 +117,7 @@ namespace DebateAI
                 if (cut < 0) break;
                 string sentence = text.Substring(0, cut).Trim();
                 buffer.Remove(0, cut);
-                if (sentence.Length != 0) sentences.Add(sentence);
+                if (sentence.Length != 0) { sentences.Add(sentence); Emitted = true; }
             }
             return sentences;
         }
@@ -278,12 +280,13 @@ namespace DebateAI
                 }, token);
                 try
                 {
-                    await llm.Chat(messages, persona.LocalMaxTokens, delta =>
+                    bool finished = await llm.Chat(messages, persona.LocalMaxTokens, delta =>
                     {
                         foreach (string sentence in splitter.Add(delta)) speaking.Add(sentence);
                     }, token).ConfigureAwait(false);
                     string rest = splitter.Rest();
-                    if (rest.Length != 0) speaking.Add(rest);
+                    // A sentence cut off by the length limit is not spoken (unless it is the only one).
+                    if (rest.Length != 0 && (finished || !splitter.Emitted)) speaking.Add(rest);
                 }
                 finally { speaking.CompleteAdding(); }
                 await voice.ConfigureAwait(false);
@@ -294,7 +297,7 @@ namespace DebateAI
             catch (Exception error)
             {
                 if (token.IsCancellationRequested) { Requeue(turns, transcribed); events.Enqueue(new LiveEvent(LiveKind.AnswerDone) { Completed = false, Text = "cancelled" }); return; }
-                events.Enqueue(new LiveEvent(LiveKind.Warning) { Text = error is AppError ? error.Message : error.GetType().Name });
+                events.Enqueue(new LiveEvent(LiveKind.Warning) { Text = error is AppError ? error.Message : error.GetType().Name + ": " + error.Message, Error = error });
                 events.Enqueue(new LiveEvent(LiveKind.AnswerDone) { Completed = false, Text = "failed" });
             }
         }
@@ -379,8 +382,9 @@ namespace DebateAI
             return body;
         }
 
-        public async Task Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token)
+        public async Task<bool> Chat(IList<ChatMessage> messages, int maxTokens, Action<string> onDelta, CancellationToken token)
         {
+            bool finished = true;
             var request = (HttpWebRequest)WebRequest.Create(LocalGuard.Loopback(Url + "/api/chat"));
             request.Method = "POST"; request.ContentType = "application/json"; request.Timeout = 120000;
             byte[] body = Encoding.UTF8.GetBytes(json.Serialize(Request(messages, maxTokens, true)));
@@ -408,7 +412,13 @@ namespace DebateAI
                                 if (content != null && content.TryGetValue("content", out text) && text is string && ((string)text).Length != 0) onDelta((string)text);
                             }
                             object done;
-                            if (item.TryGetValue("done", out done) && done is bool && (bool)done) { LastStats = Stats(item); break; }
+                            if (item.TryGetValue("done", out done) && done is bool && (bool)done)
+                            {
+                                LastStats = Stats(item);
+                                object reason;
+                                finished = !(item.TryGetValue("done_reason", out reason) && reason as string == "length");
+                                break;
+                            }
                         }
                     }
                 }
@@ -418,6 +428,7 @@ namespace DebateAI
                     throw new AppError(Describe(error, model));
                 }
             }
+            return finished;
         }
 
         // Timing reported by Ollama for the last answer (prompt reading vs. writing).
@@ -640,13 +651,35 @@ namespace DebateAI
                     throw new AppError("Die lokale Sprachausgabe (Piper) antwortet nicht.");
                 string path = (read.Result ?? "").Trim();
                 if (path.Length == 0 || !File.Exists(path)) throw new AppError("Piper hat keine Audiodatei erzeugt.");
-                byte[] wav = File.ReadAllBytes(path);
-                try { File.Delete(path); } catch (IOException) { }
+                byte[] wav = await ReadWhenFree(path, token).ConfigureAwait(false);
+                try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
                 int rate;
                 byte[] pcm = Pcm.ReadWav(wav, out rate);
                 return Pcm.Resample(pcm, rate, WinAudio.Rate);
             }
             finally { busy.Release(); }
+        }
+
+        // Windows may still hold the new file (Piper closing it, virus scanner): retry briefly.
+        internal static async Task<byte[]> ReadWhenFree(string path, CancellationToken token)
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                    {
+                        var data = new byte[file.Length];
+                        int at = 0, read;
+                        while (at < data.Length && (read = file.Read(data, at, data.Length - at)) > 0) at += read;
+                        if (at >= 44 && at == data.Length) return data;
+                    }
+                }
+                catch (IOException) { if (attempt >= 40) throw; }
+                catch (UnauthorizedAccessException) { if (attempt >= 40) throw; }
+                if (attempt >= 40) throw new AppError("Piper-Audiodatei unvollständig: " + path);
+                await Task.Delay(25, token).ConfigureAwait(false);
+            }
         }
 
         public void Dispose()
