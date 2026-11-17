@@ -3,6 +3,7 @@ name: Build und Tests
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -15,7 +16,17 @@ jobs:
         shell: cmd
         working-directory: windows
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Version aus src/AppInfo.cs lesen
+        shell: pwsh
+        run: |
+          $line = Select-String -Path src/AppInfo.cs -Pattern 'AssemblyInformationalVersion\("([^"]+)"\)'
+          $version = $line.Matches[0].Groups[1].Value
+          if (-not $version) { throw "Version nicht gefunden" }
+          if ($env:GITHUB_REF -like 'refs/tags/v*' -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME passt nicht zu Version $version" }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Version $version"
 
       - name: App bauen (wie Neu-bauen.cmd beim Kunden)
         run: call Neu-bauen.cmd
@@ -33,22 +44,72 @@ jobs:
 
       - name: Installer erstellen
         working-directory: windows/installer
-        run: '"%ISCC%" /Qp DebateAI.iss'
+        run: '"%ISCC%" /Qp /DAppVersion=%APP_VERSION% DebateAI.iss'
+
+      - name: Installer testen (still installieren, starten, deinstallieren)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist/DEBATE-AI-Setup-*.exe | Select-Object -First 1
+          if (-not $setup) { throw "Installer fehlt" }
+          Write-Host "Installer: $($setup.Name) ($([math]::Round($setup.Length / 1KB)) KB)"
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installation fehlgeschlagen (Exit $($p.ExitCode))" }
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\DEBATE AI'
+          $exe = Join-Path $dir 'DEBATE-AI.exe'
+          foreach ($file in 'DEBATE-AI.exe','DEBATE-AI.exe.config','ANLEITUNG.md','HARDWARE-TEST.md','LIVE-SETUP.md') {
+            if (-not (Test-Path (Join-Path $dir $file))) { throw "Nach der Installation fehlt $file" }
+          }
+          $info = (Get-Item $exe).VersionInfo
+          Write-Host "Installiert: $exe · Produktversion $($info.ProductVersion)"
+          if ($info.ProductVersion -ne $env:APP_VERSION) { throw "Falsche Version: $($info.ProductVersion)" }
+          $app = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($app.HasExited) { throw "Die installierte App hat sich nach dem Start sofort beendet (Exit $($app.ExitCode))" }
+          Write-Host "App läuft nach 8 s stabil (Fenster: $($app.MainWindowTitle))"
+          Stop-Process -Id $app.Id -Force
+          Start-Sleep -Seconds 1
+          $u = Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          Start-Sleep -Seconds 3
+          if (Test-Path $exe) { throw "Deinstallation hat die App nicht entfernt" }
+          Write-Host "Installation, Start und Deinstallation erfolgreich."
 
       - name: Portable ZIP erstellen
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/portable | Out-Null
-          Copy-Item DEBATE-AI.exe, DEBATE-AI.exe.config, ANLEITUNG.md dist/portable/
-          Compress-Archive -Path dist/portable/* -DestinationPath dist/DEBATE-AI-portable.zip -Force
+          Copy-Item DEBATE-AI.exe, DEBATE-AI.exe.config, ANLEITUNG.md, ../docs/LIVE-SETUP.md, ../docs/HARDWARE-TEST.md dist/portable/
+          Compress-Archive -Path dist/portable/* -DestinationPath "dist/DEBATE-AI-$env:APP_VERSION-portable.zip" -Force
+          Get-ChildItem dist -File | ForEach-Object { Write-Host "$($_.Name) · $([math]::Round($_.Length / 1KB)) KB · SHA256 $((Get-FileHash $_.FullName).Hash)" }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
-          name: DEBATE-AI-Windows
+          name: DEBATE-AI-Windows-${{ env.APP_VERSION }}
           path: |
             windows/dist/DEBATE-AI-Setup-*.exe
-            windows/dist/DEBATE-AI-portable.zip
+            windows/dist/DEBATE-AI-*-portable.zip
           if-no-files-found: error
+
+  release:
+    name: GitHub-Release (nur bei Versions-Tag)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: DEBATE-AI-Windows-*
+          merge-multiple: true
+          path: dist
+      - name: Release mit Installer anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "DEBATE AI $GITHUB_REF_NAME" \
+            --notes "Windows-Installer und portable Version. Nicht code-signiert: Windows SmartScreen zeigt eine Warnung (Weitere Informationen → Trotzdem ausführen). Live-Test-Anleitung: docs/HARDWARE-TEST.md" \
+            --prerelease
 
   website:
     name: Website (Typecheck und Build)
@@ -57,8 +118,8 @@ jobs:
       run:
         working-directory: website
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
