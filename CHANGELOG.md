@@ -1,5 +1,18 @@
 # Änderungsprotokoll
 
+## 0.7.2 · 17.11.2026 · Neue Voicemeeter-Gerätenamen (Befund vom echten PC)
+
+Befund beim Einrichten auf einem Windows-11-PC mit Voicemeeter Banana 2.1.3: Windows nannte die Voicemeeter-Aufnahmegeräte „Voicemeeter Out 1“ bis „Out 8“ und alle acht virtuellen Wiedergabegeräte gleich („Lautsprecher (VB-Audio Voicemeeter VAIO)“). DEBATE AI fand dadurch weder B2 noch AUX und hätte nach einem Neustart einen beliebigen der gleichnamigen Ausgänge gewählt.
+
+- **Gerätewahl wird über die Windows-Endpunkt-ID gespeichert**, nicht mehr nur über den (auf 31 Zeichen gekürzten) Namen. Ein mehrdeutiger Name wird nie geraten; alte Einstellungsdateien mit eindeutigem Namen funktionieren weiter.
+- **Neue Voicemeeter-Namen erkannt:** „Voicemeeter Out 7“ = B2, „Voicemeeter Out 6“ = B1 (Reihenfolge A1–A5, B1–B3; auf dem PC per Pegel und Testton gemessen). Namensvergleich mit Wortgrenzen.
+- **„TikTok LIVE verbinden“, Schritt 3: „Ausgänge per Testton zuordnen“.** Bei unbenannten Voicemeeter-Ausgängen spielt DEBATE AI nacheinander ein Testsignal und hört auf B1 und B2 mit: nur B2 = Voicemeeter Input (Gast), nur B1 = Voicemeeter AUX Input (NOVA). Ein Ausgang, der auf beiden ankommt (Rückweg), wird abgelehnt. Ergebnis wird gespeichert und in Schritt 4 (Routing-Messung) verwendet.
+- **Kostenlimit wieder in Cent-Schritten** (0,10 $), Standard 1,00 $, z. B. 0,50 $ für den ersten Test. In 0.7.0 angekündigt, das Eingabefeld nahm aber nur ganze Dollar an.
+- Einrichtungs-Prüfung: virtuelle Voicemeeter-Geräte gelten nicht mehr als Raumlautsprecher; „Out 6“ (= B1) als Gast-Eingang wird gewarnt.
+- Anzeige: Während Pegel-, Testton- und Echoprüfung steht „API: nicht verbunden (Audioprüfung, keine Kosten)“ statt fälschlich „Verbindung aktiv“; nach bestandener Echoprüfung steht nicht mehr „Fehler“.
+- **Neu: „NOVA-Fenster für TikTok öffnen“.** Befund: TikTok LIVE Studio 1.40.2 lehnt in der Quelle „Link“ lokale Adressen ab („Korrekte URL eingeben“), der Umweg über ein Edge-Fenster war für Kunden zu fummelig. DEBATE AI öffnet jetzt selbst ein randloses 9:16-Fenster „NOVA LIVE (für TikTok)“ mit derselben Szene (DU GEGEN NOVA, dauerhafter KI-Hinweis, Thema, NOVA-Figur nach echtem Ausgabepegel, Gastrahmen), ohne Browser und ohne Titelleiste. In LIVE Studio: Quelle hinzufügen → Fenster → „NOVA LIVE (für TikTok)“. Verschieben per Maus, Rechtsklick für Größe/Schließen; minimieren wird verhindert, weil LIVE Studio sonst kein Bild bekommt.
+- Drei neue automatische Tests (Gerätenamen und Wiederherstellung, Zuordnung per Testsignal mit simuliertem Mischpult, NOVA-Fenster zeichnen). **Auf echter Hardware ungetestet:** die Zuordnung per Testton und die Fensteraufnahme des NOVA-Fensters in LIVE Studio.
+
 ## 0.7.1 · 17.11.2026
 
 - „TikTok LIVE verbinden“: neuer Knopf **Diagnose kopieren**. Fasst Windows-Version, KI-Modus, alle Audiogeräte, Voicemeeter, LIVE Studio, Overlay und das Ergebnis jeder Prüfung als Text zusammen (ohne Schlüssel, ohne Aufnahmen), zum Einfügen in den Support-Chat.

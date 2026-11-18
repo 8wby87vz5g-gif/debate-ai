@@ -99,7 +99,9 @@ namespace DebateAI
                 ((FlowLayoutPanel)routeRow.Detail.Parent).Controls.Add(Row(monitor, hearsHost, applyRouting));
 
                 // 3 · Devices in DEBATE AI
-                CheckRow deviceRow = row("3 · DEBATE-AI-Geräte (Eingang B2, Ausgang AUX)", null);
+                Button discover = Button("Ausgänge per Testton zuordnen (bis ca. 40 s, du hörst Testsignale)");
+                discover.Visible = false;
+                CheckRow deviceRow = row("3 · DEBATE-AI-Geräte (Eingang B2, Ausgang AUX)", new Control[] { discover });
 
                 // 4 · Routing measurement
                 Button measure = Button("Routing messen (ca. 10 s, du hörst Testsignale)");
@@ -110,8 +112,8 @@ namespace DebateAI
                 CheckRow openAiRow = row(LocalMode ? "5 · Lokale KI (Ollama, Whisper, Piper)" : "5 · OpenAI Realtime", new Control[] { openAi });
 
                 // 6 · LIVE Studio
-                var liveMic = new CheckBox { Text = "In LIVE Studio ist „Voicemeeter Out B1“ als Mikrofon gewählt (genau einmal).", AutoSize = true, ForeColor = Theme.Text };
-                var liveOut = new CheckBox { Text = "LIVE Studio gibt den Ton auf „Voicemeeter Input“ aus (Lautsprecher/Audiogerät).", AutoSize = true, ForeColor = Theme.Text };
+                var liveMic = new CheckBox { Text = "In LIVE Studio ist „Voicemeeter Out B1“ (bei neueren Treibern „Voicemeeter Out 6“) als Mikrofon gewählt (genau einmal).", AutoSize = true, ForeColor = Theme.Text };
+                var liveOut = new CheckBox { Text = "LIVE Studio gibt den Ton auf „Voicemeeter Input“ aus (Lautsprecher/Audiogerät; bei gleichnamigen Ausgängen den aus Schritt 3).", AutoSize = true, ForeColor = Theme.Text };
                 var altGuest = new CheckBox { Text = "Stattdessen: Gast über eine Anruf-App, deren Ausgabe „Voicemeeter Input“ ist.", AutoSize = true, ForeColor = Theme.Text };
                 CheckRow studioRow = row("6 · TikTok LIVE Studio (von dir zu bestätigen)", null);
                 var studioBody = (FlowLayoutPanel)studioRow.Detail.Parent;
@@ -130,9 +132,6 @@ namespace DebateAI
                 CheckRow consentRow = row("9 · Einwilligung und KI-Kennzeichnung", null);
                 ((FlowLayoutPanel)consentRow.Detail.Parent).Controls.Add(consentLive);
                 consentRow.Detail.Text = "NOVA sagt beim Start hörbar, dass sie eine KI ist.";
-
-                Func<string, Device> findInput = hint => FindNamed(input, hint, null);
-                Func<string, string, Device> findOutput = (hint, avoid) => FindNamed(output, hint, avoid);
 
                 // Everything the checks found, as plain text to paste into a support chat (no keys, no recordings).
                 diagnose.Click += delegate
@@ -206,21 +205,24 @@ namespace DebateAI
                 Action assignDevices = () =>
                 {
                     RefreshDevices();
-                    Device b2 = findInput("Voicemeeter Out B2") ?? findInput("Voicemeeter AUX Output");
-                    Device aux = findOutput("Voicemeeter AUX Input", null) ?? findOutput("Voicemeeter AUX In", null);
+                    Device b2 = FindB2();
+                    Device aux = FindAux();
                     if (b2 != null) input.SelectedItem = b2;
                     if (aux != null) output.SelectedItem = aux;
-                    deviceRow.Show(b2 != null && aux != null, b2 != null && aux != null ? "Eingang: " + b2.Name + " · Ausgang: " + aux.Name :
+                    bool unnamed = aux == null && DevicesOf(output).Exists(VirtualDevices.IsUnnamedVirtualOutput);
+                    discover.Visible = unnamed || (FindVaio() == null && DevicesOf(output).Exists(VirtualDevices.IsUnnamedVirtualOutput));
+                    deviceRow.Show(b2 != null && aux != null, b2 != null && aux != null ? "Eingang: " + b2.Name + " [" + b2.Id + "] · Ausgang: " + aux.Name + " [" + aux.Id + "]" :
                         "Nicht gefunden: " + (b2 == null ? "„Voicemeeter Out B2“ " : "") + (aux == null ? "„Voicemeeter AUX Input“" : "") +
-                        ". Voicemeeter Banana installieren, Windows neu starten und „Geräte neu laden“.");
+                        (unnamed ? ". Windows nennt die Voicemeeter-Ausgänge hier nicht eindeutig. Zuerst Routing einrichten (Schritt 2), dann „Ausgänge per Testton zuordnen“." :
+                        ". Voicemeeter Banana installieren, Windows neu starten und „Geräte neu laden“."));
                 };
 
                 Func<Task> runMeasure = async () =>
                 {
-                    Device b2 = findInput("Voicemeeter Out B2") ?? findInput("Voicemeeter AUX Output");
-                    Device b1 = findInput("Voicemeeter Out B1") ?? findInput("Voicemeeter Output");
-                    Device vaio = findOutput("Voicemeeter Input", "AUX");
-                    Device aux = findOutput("Voicemeeter AUX Input", null) ?? findOutput("Voicemeeter AUX In", null);
+                    Device b2 = FindB2();
+                    Device b1 = FindB1();
+                    Device vaio = FindVaio();
+                    Device aux = FindAux();
                     if (b1 == null || b2 == null || vaio == null || aux == null)
                     {
                         measureRow.Show(false, "Für die Messung fehlen Voicemeeter-Geräte (B1, B2, Voicemeeter Input, Voicemeeter AUX Input).");
@@ -311,10 +313,42 @@ namespace DebateAI
                     update();
                 };
                 measure.Click += async delegate { await runMeasure(); };
+                discover.Click += async delegate
+                {
+                    Device b1 = FindB1(), b2 = FindB2();
+                    if (b1 == null || b2 == null) { deviceRow.Show(false, "Für die Zuordnung fehlen die Eingänge B1 und B2 („Voicemeeter Out B1/B2“ bzw. „Out 6/7“)."); return; }
+                    List<Device> candidates = DevicesOf(output).FindAll(VirtualDevices.IsUnnamedVirtualOutput);
+                    if (candidates.Count == 0) { deviceRow.Show(false, "Keine unbenannten Voicemeeter-Ausgänge gefunden."); return; }
+                    if (MessageBox.Show(dialog, "DEBATE AI spielt nacheinander auf bis zu " + candidates.Count + " Voicemeeter-Ausgängen ein kurzes Testsignal " +
+                        "und hört auf B1 und B2 mit. Du hörst die Signale im Kopfhörer. Kein Internet, keine Kosten.\n\n" +
+                        "Voraussetzung: Routing aus Schritt 2 (Gast/VAIO → A1 + B2, NOVA/AUX → B1). LIVE Studio stumm lassen. Fortfahren?",
+                        "Ausgänge zuordnen", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                    discover.Enabled = measure.Enabled = all.Enabled = false;
+                    try
+                    {
+                        OutputDiscovery found = await OutputDiscovery.Run(candidates,
+                            d => () => new WavePlayback(WinAudio.Resolve(false, d)),
+                            () => new WaveCapture(WinAudio.Resolve(true, b1)), () => new WaveCapture(WinAudio.Resolve(true, b2)),
+                            () => clock.ElapsedMilliseconds, ms => Task.Delay(ms),
+                            (n, total, d) => deviceRow.Show(null, "Testsignal " + n + " von " + total + ": " + d.Name + " [" + d.Id + "] …"));
+                        foreach (DiscoveryStep step in found.Steps) LocalData.WriteLog("Ausgangs-Zuordnung: " + step.Describe());
+                        if (found.Vaio != null) vaioEndpoint = found.Vaio.Endpoint ?? "";
+                        if (found.Aux != null) auxEndpoint = found.Aux.Endpoint ?? "";
+                        SaveSettings();
+                        if (found.Aux != null) output.SelectedItem = found.Aux;
+                        if (b2 != null) input.SelectedItem = b2;
+                        var lines = found.Steps.ConvertAll(step => step.Describe());
+                        deviceRow.Show(found.Complete, (found.Complete ? "Zugeordnet. Eingang: " + b2.Name + " [" + b2.Id + "] · Ausgang (AUX): " + found.Aux.Name + " [" + found.Aux.Id + "]\n" :
+                            "Nicht vollständig zugeordnet. Routing in Voicemeeter prüfen (Schritt 2) und Voicemeeter-Engine läuft?\n") + string.Join("\n", lines));
+                        if (found.Aux == null || found.Aux.Endpoint == null) discover.Visible = true;
+                    }
+                    catch (Exception error) { deviceRow.Show(false, error is AppError ? error.Message : "Zuordnung fehlgeschlagen: " + error.GetType().Name); }
+                    finally { discover.Enabled = measure.Enabled = all.Enabled = true; update(); }
+                };
                 openAi.Click += async delegate { await runOpenAi(); };
                 guestTest.Click += async delegate
                 {
-                    Device b2 = findInput("Voicemeeter Out B2") ?? findInput("Voicemeeter AUX Output");
+                    Device b2 = FindB2();
                     if (b2 == null) { guestRow.Show(false, "„Voicemeeter Out B2“ nicht gefunden."); return; }
                     guestTest.Enabled = false;
                     var probe = new GuestProbe();
@@ -365,17 +399,5 @@ namespace DebateAI
         }
 
         private bool liveChecked;
-
-        private static Device FindNamed(ComboBox box, string hint, string avoid)
-        {
-            foreach (object item in box.Items)
-            {
-                var device = item as Device;
-                if (device == null || device.Name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                if (avoid != null && device.Name.IndexOf(avoid, StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                return device;
-            }
-            return null;
-        }
     }
 }

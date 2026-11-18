@@ -15,7 +15,7 @@ namespace DebateAI
 
     internal static class Setup
     {
-        private static readonly string[] VirtualInputs = { "Voicemeeter Out B2", "Voicemeeter AUX Output", "Voicemeeter AUX Out", "Voicemeeter Out B1", "Voicemeeter Output", "CABLE Output", "VB-Audio Virtual Cable" };
+        private static readonly string[] VirtualInputs = { "Voicemeeter Out B2", "Voicemeeter Out 7", "Voicemeeter AUX Output", "Voicemeeter AUX Out", "Voicemeeter Out B1", "Voicemeeter Out 6", "Voicemeeter Output", "CABLE Output", "VB-Audio Virtual Cable" };
         private static readonly string[] VirtualOutputs = { "Voicemeeter AUX Input", "Voicemeeter AUX In", "Voicemeeter VAIO3", "CABLE Input" };
 
         public static readonly ScenarioPreset[] Presets =
@@ -76,11 +76,13 @@ namespace DebateAI
             if (output.Length == 0) warnings.Add("Kein Ausgang für NOVA gewählt.");
             if (input.Length == 0 || output.Length == 0) return warnings;
             bool vmIn = input.IndexOf("Voicemeeter", StringComparison.OrdinalIgnoreCase) >= 0;
-            bool vmOut = output.IndexOf("Voicemeeter", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool vmOut = Virtual(output);
             bool aux = output.IndexOf("AUX", StringComparison.OrdinalIgnoreCase) >= 0 || output.IndexOf("VAIO3", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (vmIn && vmOut && !aux)
+            // "Lautsprecher (VB-Audio Voicemeeter VAIO)" does not say which virtual input it is; the routing measurement decides.
+            bool unnamed = output.IndexOf("Voicemeeter", StringComparison.OrdinalIgnoreCase) < 0;
+            if (vmIn && vmOut && !aux && !unnamed)
                 warnings.Add("NOVA spricht auf den Haupteingang von Voicemeeter, den DEBATE AI auch hört. Das erzeugt fast sicher ein Echo. Für NOVA „Voicemeeter AUX Input“ verwenden.");
-            if (input.IndexOf("B1", StringComparison.OrdinalIgnoreCase) >= 0 && vmOut)
+            if ((input.IndexOf("B1", StringComparison.OrdinalIgnoreCase) >= 0 || VirtualDevices.Matches(input, "Voicemeeter Out 6")) && vmOut)
                 warnings.Add("Eingang B1 ist bei Banana der Bus zum Stream. Für den Gast besser B2 verwenden, sonst hört NOVA sich selbst.");
             if (input.IndexOf("CABLE", StringComparison.OrdinalIgnoreCase) >= 0 && output.IndexOf("CABLE", StringComparison.OrdinalIgnoreCase) >= 0)
                 warnings.Add("Ein- und Ausgang nutzen dasselbe virtuelle Kabel. NOVA würde sich selbst hören.");
@@ -89,9 +91,18 @@ namespace DebateAI
             return warnings;
         }
 
+        // Virtual audio devices (Voicemeeter, VB-Cable) are never room speakers, even if Windows names them "Lautsprecher".
+        public static bool Virtual(string name)
+        {
+            name = name ?? "";
+            return name.IndexOf("Voicemee", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("VB-Audio", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("CABLE", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         public static bool Speakers(string output)
         {
             output = output ?? "";
+            if (Virtual(output)) return false;
             return output.IndexOf("Lautsprecher", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    output.IndexOf("Speaker", StringComparison.OrdinalIgnoreCase) >= 0;
         }

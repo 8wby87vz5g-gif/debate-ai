@@ -50,6 +50,9 @@ namespace DebateAI
                 Run("Stimmprobe spielt NOVAs Stimme und schließt die Sitzung", TestVoiceTest);
                 Run("Voicemeeter: TikTok-Routing-Plan, Anwenden, Rücklesen", TestVoicemeeterPlan);
                 Run("Routing-Messung erkennt richtige und falsche Wege", TestRoutingMeasurement);
+                Run("Voicemeeter-Geräte: neue Namen, gleiche Namen, Wiederherstellung über Endpunkt", TestVirtualDeviceNames);
+                Run("Unbenannte Voicemeeter-Ausgänge per Testsignal zuordnen", TestOutputDiscovery);
+                Run("NOVA-Fenster für TikTok: Szene zeichnen, Sprechanzeige, Status", TestOverlayWindow);
                 Run("Gastton-Test und LIVE-Studio-Erkennung", TestGuestProbe);
                 Run("Kostenschätzung, Kostenlimit und Gast ausreden lassen", TestCostLimit);
                 Run("Stream-Overlay: lokale Seite, Zustand, Sprechpegel", TestOverlay);
@@ -610,6 +613,10 @@ namespace DebateAI
             Check(Setup.Check("CABLE Output", "CABLE Input").Count == 1, "Gleiches virtuelles Kabel nicht gewarnt");
             Check(Setup.Check("Mikrofon", "Lautsprecher (Realtek)").Count == 1 && Setup.Speakers("Speakers (USB)"), "Lautsprecher nicht gewarnt");
             Check(Setup.Check("", "").Count == 2, "Fehlende Geräte nicht gemeldet");
+            // Newer Voicemeeter drivers on Windows 11: numbered bus outputs, generic "Lautsprecher" for virtual inputs (WinMM, 31 characters).
+            Check(Setup.Check("Voicemeeter Out 7 (VB-Audio Voi", "Lautsprecher (VB-Audio Voicemee").Count == 0, "Virtueller Voicemeeter-Ausgang als Raumlautsprecher gewarnt");
+            Check(Setup.Check("Voicemeeter Out 6 (VB-Audio Voi", "Lautsprecher (VB-Audio Voicemee").Count == 1, "Out 6 (= B1) als Gast-Eingang nicht gewarnt");
+            Check(!Setup.Speakers("Lautsprecher (VB-Audio Voicemee") && Setup.Speakers("Lautsprecher (Realtek(R) Audio)"), "Virtuelle Geräte gelten als Lautsprecher");
         }
 
         private static void TestProfiles()
@@ -749,6 +756,84 @@ namespace DebateAI
             Check(loop[0].Ok && !loop[1].Ok && loop[1].Arrived && loop[1].Describe().StartsWith("✗"), "Rückweg NOVA → B2 nicht erkannt");
             mixer.Routes.Clear();
             Check(!MeasureMix(mixer, "VAIO", "B2!")[0].Ok, "Fehlender Gast-Weg nicht erkannt");
+        }
+
+        private static void TestVirtualDeviceNames()
+        {
+            // Device list as seen on a real Windows 11 PC with Voicemeeter Banana 2.1.3 (17.11.2026).
+            var inputs = new List<Device>
+            {
+                new Device(0, "Mikrofonarray (Intel® Smart Sou", "mic"), new Device(1, "Voicemeeter Out 4 (VB-Audio Voi", "o4"),
+                new Device(2, "Voicemeeter Out 1 (VB-Audio Voi", "o1"), new Device(3, "Voicemeeter Out 5 (VB-Audio Voi", "o5"),
+                new Device(4, "Voicemeeter Out 7 (VB-Audio Voi", "o7"), new Device(5, "Voicemeeter Out 2 (VB-Audio Voi", "o2"),
+                new Device(6, "Voicemeeter Out 6 (VB-Audio Voi", "o6"), new Device(7, "Kopfhörer (Borofone BO35)", "bt")
+            };
+            Check(VirtualDevices.Find(inputs, VirtualDevices.B2, null).Endpoint == "o7", "Out 7 nicht als B2 erkannt");
+            Check(VirtualDevices.Find(inputs, VirtualDevices.B1, null).Endpoint == "o6", "Out 6 nicht als B1 erkannt");
+            var old = new List<Device> { new Device(0, "Voicemeeter Out B1 (VB-Audio Vo", "b1"), new Device(1, "Voicemeeter Out B2 (VB-Audio Vo", "b2"),
+                new Device(2, "Voicemeeter AUX Input (VB-Audio", "aux"), new Device(3, "Voicemeeter Input (VB-Audio Voi", "vaio") };
+            Check(VirtualDevices.Find(old, VirtualDevices.B2, null).Endpoint == "b2" && VirtualDevices.Find(old, VirtualDevices.Aux, null).Endpoint == "aux" &&
+                VirtualDevices.Find(old, VirtualDevices.Vaio, "AUX").Endpoint == "vaio", "Bisherige Voicemeeter-Namen nicht mehr erkannt");
+            Check(!VirtualDevices.Matches("Voicemeeter Out 60", "Voicemeeter Out 6") && !VirtualDevices.Matches("Voicemeeter AUX Input", "Voicemeeter AUX In") &&
+                VirtualDevices.Matches("voicemeeter out 6 (VB", "Voicemeeter Out 6"), "Wortgrenzen beim Namensvergleich falsch");
+            var outputs = new List<Device> { new Device(0, "Speaker (Realtek(R) Audio)", "spk") };
+            for (uint i = 1; i <= 8; i++) outputs.Add(new Device(i, "Lautsprecher (VB-Audio Voicemee", "vm" + i));
+            outputs.Add(new Device(9, "Kopfhörer (Borofone BO35)", "bt"));
+            Check(outputs.FindAll(VirtualDevices.IsUnnamedVirtualOutput).Count == 8 && !VirtualDevices.IsUnnamedVirtualOutput(old[2]) &&
+                !VirtualDevices.IsUnnamedVirtualOutput(outputs[0]), "Unbenannte Voicemeeter-Ausgänge falsch erkannt");
+            // Restore: endpoint wins; an ambiguous name is never guessed; a unique name still works for old settings files.
+            Check(VirtualDevices.Restore(outputs, "vm1", "Lautsprecher (VB-Audio Voicemee") == 1, "Ausgang nicht über Endpunkt wiederhergestellt");
+            Check(VirtualDevices.Restore(outputs, "", "Lautsprecher (VB-Audio Voicemee") == -1, "Mehrdeutiger Name wurde geraten");
+            Check(VirtualDevices.Restore(outputs, "weg", "Kopfhörer (Borofone BO35)") == 9 && VirtualDevices.Restore(outputs, null, "") == -1, "Eindeutiger Name nicht wiederhergestellt");
+            Check(VirtualDevices.ByEndpoint(outputs, "vm2").Id == 2 && VirtualDevices.ByEndpoint(outputs, "") == null, "Suche über Endpunkt");
+        }
+
+        private static void TestOutputDiscovery()
+        {
+            var mixer = new FakeMixer();
+            mixer.Routes.Add("L3>B2"); mixer.Routes.Add("L1>B1");   // L3 = Voicemeeter Input (VAIO), L1 = AUX
+            var candidates = new List<Device>();
+            for (uint i = 0; i < 5; i++) candidates.Add(new Device(i, "Lautsprecher (VB-Audio Voicemee", "L" + i));
+            var seen = new List<int>();
+            OutputDiscovery found = OutputDiscovery.Run(candidates, d => () => mixer.Output(d.Endpoint), () => mixer.Input("B1"), () => mixer.Input("B2"),
+                () => mixer.Time, ms => { mixer.Time += ms; return Task.FromResult(0); }, (n, total, d) => seen.Add(n)).GetAwaiter().GetResult();
+            Check(found.Complete && found.Aux.Endpoint == "L1" && found.Vaio.Endpoint == "L3", "Zuordnung falsch: " + string.Join(" / ", found.Steps.ConvertAll(x => x.Describe())));
+            Check(found.Steps.Count == 4 && seen.Count == 4, "Suche nach dem Fund nicht beendet");
+            Check(found.Steps[1].Describe().Contains("AUX") && found.Steps[3].Describe().Contains("Gast-Weg") && found.Steps[0].Describe().Contains("weder"), "Beschreibung falsch");
+            // A loop (AUX also on B2) must not be accepted as NOVA output.
+            mixer.Routes.Add("L1>B2");
+            OutputDiscovery loop = OutputDiscovery.Run(candidates, d => () => mixer.Output(d.Endpoint), () => mixer.Input("B1"), () => mixer.Input("B2"),
+                () => mixer.Time, ms => { mixer.Time += ms; return Task.FromResult(0); }, null).GetAwaiter().GetResult();
+            Check(loop.Aux == null && !loop.Complete && loop.Steps.Count == 5 && loop.Steps[1].Describe().Contains("B1 und B2"), "Rückweg als NOVA-Ausgang akzeptiert");
+        }
+
+        private static void TestOverlayWindow()
+        {
+            var motion = new OverlayMotion();
+            var speaking = new OverlayState { Phase = "speaking", Level = 0.9, Name = "Nova", Topic = "Smartphones an Schulen" };
+            for (int i = 0; i < 10; i++) motion.Step(speaking);
+            Check(motion.Level > 0.8 && motion.Glow > 0.5 && motion.Spin > 0, "Sprechanzeige folgt NOVAs Pegel nicht");
+            var idle = new OverlayState();
+            for (int i = 0; i < 40; i++) motion.Step(idle);
+            Check(motion.Level < 0.01, "Mund schließt sich nach dem Sprechen nicht");
+            Check(OverlayPainter.StatusText("speaking") == "spricht" && OverlayPainter.StatusText("guest") == "hört dir zu" && OverlayPainter.StatusText(null) == "bereit",
+                "Statustexte falsch");
+            Check(OverlayPainter.Label.Contains("KI-Debattenpartnerin") && OverlayPainter.Label.Contains("synthetische Stimme"), "KI-Hinweis fehlt");
+            Check(OverlayWindow.WindowTitle == "NOVA LIVE (für TikTok)", "Fenstername geändert: Anleitung anpassen");
+            try
+            {
+                using (var bitmap = new System.Drawing.Bitmap(270, 480))
+                using (var g = System.Drawing.Graphics.FromImage(bitmap))
+                {
+                    OverlayPainter.Paint(g, bitmap.Size, speaking, motion);
+                    OverlayPainter.Paint(g, bitmap.Size, new OverlayState { Name = "Eine sehr lange Persönlichkeit mit Namen", Topic = new string('x', 300) }, null);
+                    System.Drawing.Color corner = bitmap.GetPixel(2, 2), orb = bitmap.GetPixel(135, 142);
+                    Check(corner.R < 40 && corner.G < 40 && corner.B < 60, "Hintergrund nicht dunkel: " + corner);
+                    Check(orb.B > 120 || orb.G > 120, "NOVA-Figur fehlt: " + orb);
+                }
+            }
+            catch (TypeInitializationException) { Console.WriteLine("    Übersprungen: keine Grafikbibliothek (nur außerhalb von Windows)."); }
+            catch (DllNotFoundException) { Console.WriteLine("    Übersprungen: keine Grafikbibliothek (nur außerhalb von Windows)."); }
         }
 
         private static void TestGuestProbe()

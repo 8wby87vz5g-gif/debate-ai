@@ -1,11 +1,12 @@
 # DEBATE AI · Projektstatus
 
-Stand: 17.11.2026 · Windows-Client 0.7.1
+Stand: 17.11.2026 · Windows-Client 0.7.2
 
 Legende: ✅ umgesetzt und automatisch getestet · ⚪ **ungetestet auf echter Hardware / mit echter OpenAI-Verbindung / mit TikTok** · 🟡 teilweise · ❌ fehlt
 
 > **Fortschritt:** Lokale Debatte mit echter OpenAI-Verbindung auf deinem Windows-PC funktioniert (dein Test, Reaktionszeit ca. 1–2 s).
 > **TikTok-Kette (Voicemeeter Banana, LIVE Studio, echter Gast): ungetestet.** Ablauf: `docs/HARDWARE-TEST.md`.
+> **17.11.2026, Einrichtung auf deinem PC (0.7.1):** Voicemeeter Banana läuft (A1 Kopfhörer über MME), Routing gesetzt. In DEBATE AI per Pegel und Testton zugeordnet: Eingang „Voicemeeter Out 7“ = B2, Ausgang „Lautsprecher [1]“ = AUX; „Out 6“ = B1, „Lautsprecher [2]“ = Voicemeeter Input. Lokale Echoprüfung bestanden. LIVE Studio, OpenAI-Test und Gast: noch offen. Gefundene Fehler in 0.7.2 behoben (Gerätenamen, Kostenlimit in Cent).
 
 > **Wichtig:** Die Live-Pflichtabnahme (echter Mensch, TikTok LIVE, ≥ 10 Wechsel, gemessene Latenz) ist **noch nicht durchgeführt**. Alle Live-Funktionen gelten bis dahin als ungetestet. Ablauf: `docs/HARDWARE-TEST.md`.
 
