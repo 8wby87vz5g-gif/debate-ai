@@ -51,6 +51,10 @@ Der Gastton-Test (Schritt 7) zeigt das ehrlich: Kommt bei VAIO nichts an oder h�
 
 DEBATE AI liefert die Live-Szene selbst aus, nur auf deinem PC (`127.0.0.1`), ohne Internet und ohne TikTok-Zugangsdaten.
 
+**Empfohlen ab 0.7.2 (LIVE Studio 1.40.2 und neuer):** DEBATE AI → „3 · Gesprächssteuerung“ → **NOVA-Fenster für TikTok öffnen**. In LIVE Studio **Quelle hinzufügen → Fenster** → **„NOVA LIVE (für TikTok)“** wählen (nicht das DEBATE-AI-Bedienfenster), auf volle Höhe ziehen, Kamera darüber in den Rahmen „GAST“. Das Fenster offen lassen; es darf hinter anderen Fenstern liegen, aber nicht minimiert werden. Grund: LIVE Studio 1.40.2 lehnt in der Quelle „Link“ lokale Adressen wie `http://127.0.0.1:18190/nova` ab („Korrekte URL eingeben“, am 18.11.2026 auf einem echten PC beobachtet).
+
+Der Link-Weg unten bleibt für ältere LIVE-Studio-Versionen und OBS.
+
 ![Szene](overlay-szene.png)
 
 1. DEBATE AI starten → „3 · Gesprächssteuerung“ → **Stream-Overlay (Link kopieren)**. Der Link lautet normalerweise `http://127.0.0.1:18190/nova`. Ist der Port belegt (z. B. weil DEBATE AI mehrfach läuft), nimmt die App 18191–18194; dann nur eine DEBATE-AI-Instanz laufen lassen, damit der Link in der Szene stimmt.

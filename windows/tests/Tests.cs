@@ -52,6 +52,7 @@ namespace DebateAI
                 Run("Routing-Messung erkennt richtige und falsche Wege", TestRoutingMeasurement);
                 Run("Voicemeeter-Geräte: neue Namen, gleiche Namen, Wiederherstellung über Endpunkt", TestVirtualDeviceNames);
                 Run("Unbenannte Voicemeeter-Ausgänge per Testsignal zuordnen", TestOutputDiscovery);
+                Run("NOVA-Fenster für TikTok: Szene zeichnen, Sprechanzeige, Status", TestOverlayWindow);
                 Run("Gastton-Test und LIVE-Studio-Erkennung", TestGuestProbe);
                 Run("Kostenschätzung, Kostenlimit und Gast ausreden lassen", TestCostLimit);
                 Run("Stream-Overlay: lokale Seite, Zustand, Sprechpegel", TestOverlay);
@@ -804,6 +805,35 @@ namespace DebateAI
             OutputDiscovery loop = OutputDiscovery.Run(candidates, d => () => mixer.Output(d.Endpoint), () => mixer.Input("B1"), () => mixer.Input("B2"),
                 () => mixer.Time, ms => { mixer.Time += ms; return Task.FromResult(0); }, null).GetAwaiter().GetResult();
             Check(loop.Aux == null && !loop.Complete && loop.Steps.Count == 5 && loop.Steps[1].Describe().Contains("B1 und B2"), "Rückweg als NOVA-Ausgang akzeptiert");
+        }
+
+        private static void TestOverlayWindow()
+        {
+            var motion = new OverlayMotion();
+            var speaking = new OverlayState { Phase = "speaking", Level = 0.9, Name = "Nova", Topic = "Smartphones an Schulen" };
+            for (int i = 0; i < 10; i++) motion.Step(speaking);
+            Check(motion.Level > 0.8 && motion.Glow > 0.5 && motion.Spin > 0, "Sprechanzeige folgt NOVAs Pegel nicht");
+            var idle = new OverlayState();
+            for (int i = 0; i < 40; i++) motion.Step(idle);
+            Check(motion.Level < 0.01, "Mund schließt sich nach dem Sprechen nicht");
+            Check(OverlayPainter.StatusText("speaking") == "spricht" && OverlayPainter.StatusText("guest") == "hört dir zu" && OverlayPainter.StatusText(null) == "bereit",
+                "Statustexte falsch");
+            Check(OverlayPainter.Label.Contains("KI-Debattenpartnerin") && OverlayPainter.Label.Contains("synthetische Stimme"), "KI-Hinweis fehlt");
+            Check(OverlayWindow.WindowTitle == "NOVA LIVE (für TikTok)", "Fenstername geändert: Anleitung anpassen");
+            try
+            {
+                using (var bitmap = new System.Drawing.Bitmap(270, 480))
+                using (var g = System.Drawing.Graphics.FromImage(bitmap))
+                {
+                    OverlayPainter.Paint(g, bitmap.Size, speaking, motion);
+                    OverlayPainter.Paint(g, bitmap.Size, new OverlayState { Name = "Eine sehr lange Persönlichkeit mit Namen", Topic = new string('x', 300) }, null);
+                    System.Drawing.Color corner = bitmap.GetPixel(2, 2), orb = bitmap.GetPixel(135, 142);
+                    Check(corner.R < 40 && corner.G < 40 && corner.B < 60, "Hintergrund nicht dunkel: " + corner);
+                    Check(orb.B > 120 || orb.G > 120, "NOVA-Figur fehlt: " + orb);
+                }
+            }
+            catch (TypeInitializationException) { Console.WriteLine("    Übersprungen: keine Grafikbibliothek (nur außerhalb von Windows)."); }
+            catch (DllNotFoundException) { Console.WriteLine("    Übersprungen: keine Grafikbibliothek (nur außerhalb von Windows)."); }
         }
 
         private static void TestGuestProbe()

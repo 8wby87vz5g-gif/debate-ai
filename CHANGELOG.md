@@ -10,7 +10,8 @@ Befund beim Einrichten auf einem Windows-11-PC mit Voicemeeter Banana 2.1.3: Win
 - **Kostenlimit wieder in Cent-Schritten** (0,10 $), Standard 1,00 $, z. B. 0,50 $ für den ersten Test. In 0.7.0 angekündigt, das Eingabefeld nahm aber nur ganze Dollar an.
 - Einrichtungs-Prüfung: virtuelle Voicemeeter-Geräte gelten nicht mehr als Raumlautsprecher; „Out 6“ (= B1) als Gast-Eingang wird gewarnt.
 - Anzeige: Während Pegel-, Testton- und Echoprüfung steht „API: nicht verbunden (Audioprüfung, keine Kosten)“ statt fälschlich „Verbindung aktiv“; nach bestandener Echoprüfung steht nicht mehr „Fehler“.
-- Zwei neue automatische Tests (Gerätenamen und Wiederherstellung, Zuordnung per Testsignal mit simuliertem Mischpult). **Auf echter Hardware ungetestet:** die neue Zuordnung per Testton.
+- **Neu: „NOVA-Fenster für TikTok öffnen“.** Befund: TikTok LIVE Studio 1.40.2 lehnt in der Quelle „Link“ lokale Adressen ab („Korrekte URL eingeben“), der Umweg über ein Edge-Fenster war für Kunden zu fummelig. DEBATE AI öffnet jetzt selbst ein randloses 9:16-Fenster „NOVA LIVE (für TikTok)“ mit derselben Szene (DU GEGEN NOVA, dauerhafter KI-Hinweis, Thema, NOVA-Figur nach echtem Ausgabepegel, Gastrahmen), ohne Browser und ohne Titelleiste. In LIVE Studio: Quelle hinzufügen → Fenster → „NOVA LIVE (für TikTok)“. Verschieben per Maus, Rechtsklick für Größe/Schließen; minimieren wird verhindert, weil LIVE Studio sonst kein Bild bekommt.
+- Drei neue automatische Tests (Gerätenamen und Wiederherstellung, Zuordnung per Testsignal mit simuliertem Mischpult, NOVA-Fenster zeichnen). **Auf echter Hardware ungetestet:** die Zuordnung per Testton und die Fensteraufnahme des NOVA-Fensters in LIVE Studio.
 
 ## 0.7.1 · 17.11.2026
 

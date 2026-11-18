@@ -140,7 +140,10 @@ namespace DebateAI
         private readonly ComboBox aiMode = Combo();
         private readonly Label modeLabel = new Label { AutoSize = true, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold) };
         private readonly Label licenseLabel = new Label { AutoSize = true, ForeColor = Theme.Muted, MaximumSize = new Size(460, 0) };
-        private readonly Button overlayButton = Button("Stream-Overlay (Link kopieren)");
+        private readonly Button overlayButton = Button("Overlay-Link kopieren");
+        private readonly Button overlayWindowButton = Button("NOVA-Fenster für TikTok öffnen");
+        private OverlayWindow overlayWindow;
+        private OverlayState currentOverlay = new OverlayState();
         private readonly CheckBox stopAtLimit = Check("Bei Kostenlimit OpenAI-Sitzung ganz beenden");
         private OverlayServer overlay;
         private long overlayAt;
@@ -245,6 +248,8 @@ namespace DebateAI
             };
             informed.CheckedChanged += delegate { Render(); };
             overlayButton.Click += delegate { ShowOverlay(); };
+            overlayWindowButton.Click += delegate { ShowOverlayWindow(); };
+            overlayWindowButton.FlatAppearance.BorderColor = Theme.Cyan;
             StartOverlay();
             tick.Tick += async delegate
             {
@@ -402,7 +407,7 @@ namespace DebateAI
                 Grid(Pair("Sprecherwechsel", mode), Pair("Geduld beim Satzende", patience), Pair("Wenn der Gast unterbricht", barge)),
                 fairness, echoGuard, memory,
                 Row(Caption("Unterbrechung ab ms"), bargeMs, Caption("Nachfrage nach s"), proactive),
-                Row(Caption("Kostenlimit $ pro Debatte (0 = aus)"), costLimit), stopAtLimit, Row(overlayButton),
+                Row(Caption("Kostenlimit $ pro Debatte (0 = aus)"), costLimit), stopAtLimit, Row(overlayWindowButton, overlayButton),
                 Row(Caption("Schwelle dBFS"), threshold, Caption("Sprechpause ms"), pauseMs),
                 Row(Caption("Nachlauf ms"), guard, Caption("Max. Redezeit s"), turnSeconds),
                 Row(offline), Row(key, log, wipe), Row(report), informed, licenseLabel, Row(licenseButton, machineButton)));
@@ -944,12 +949,12 @@ namespace DebateAI
 
         private void UpdateOverlay()
         {
-            if (overlay == null) return;
+            if (overlay == null && overlayWindow == null) return;
             long now = uiClock.ElapsedMilliseconds;
             if (now - overlayAt < 80) return;
             overlayAt = now;
             bool running = !session.ReadyForStart && session.State != Phase.Meter && session.State != Phase.Tone && session.State != Phase.EchoTest;
-            overlay.Update(new OverlayState
+            currentOverlay = new OverlayState
             {
                 Name = string.IsNullOrEmpty(personaName.Text.Trim()) ? "Nova" : personaName.Text.Trim(),
                 Topic = topic.Text.Trim(),
@@ -957,7 +962,33 @@ namespace DebateAI
                 Level = OverlayState.LevelFromDb(session.NovaLevel),
                 Running = running,
                 Mode = LocalMode ? "lokal" : CloudMode ? "openai" : "offline"
-            });
+            };
+            if (overlay != null) overlay.Update(currentOverlay);
+        }
+
+        // Native 9:16 window for TikTok LIVE Studio ("Quelle hinzufügen → Fenster"). LIVE Studio 1.40.2
+        // no longer accepts local addresses in its "Link" source, so this is the recommended way.
+        private void ShowOverlayWindow()
+        {
+            if (overlayWindow != null && !overlayWindow.IsDisposed)
+            {
+                overlayWindow.WindowState = FormWindowState.Normal;
+                overlayWindow.Activate();
+                return;
+            }
+            overlayWindow = new OverlayWindow(() => currentOverlay);
+            overlayWindow.FormClosed += delegate { overlayWindow = null; };
+            overlayWindow.Show();
+            UpdateOverlay();
+            MessageBox.Show(this, "Das Fenster „" + OverlayWindow.WindowTitle + "“ ist offen. Es zeigt „DU GEGEN NOVA“, den dauerhaften KI-Hinweis, " +
+                "das Thema und NOVAs Sprechanzeige.\n\n" +
+                "In TikTok LIVE Studio:\n" +
+                "1. Quelle hinzufügen → „Fenster“ (Fensteraufnahme).\n" +
+                "2. In der Liste „" + OverlayWindow.WindowTitle + "“ wählen (nicht das DEBATE-AI-Bedienfenster).\n" +
+                "3. Quelle auf volle Höhe ziehen; Kamera darüber in den Rahmen „GAST“.\n\n" +
+                "Das Fenster offen lassen und nicht minimieren; es darf hinter anderen Fenstern liegen. " +
+                "Verschieben mit der Maus, Rechtsklick für Größe oder Schließen.",
+                "NOVA-Fenster für TikTok", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void ShowOverlay()
@@ -968,7 +999,9 @@ namespace DebateAI
                 "In TikTok LIVE Studio: Szene „DEBATE AI – NOVA LIVE“ anlegen → Quelle hinzufügen → „Link“ → Link einfügen, Größe 1080 × 1920.\n" +
                 "Die Overlay-Quelle ganz nach unten legen; Kamera oder Gastbild darüber in den Rahmen „GAST“ ziehen.\n" +
                 "Nur Titel, KI-Hinweis und Sprechanzeige (durchsichtig, über der Kamera): " + overlay.Url + "?view=badge\n\n" +
-                "Der Link funktioniert nur auf diesem PC, solange DEBATE AI läuft. Vorschau jetzt im Browser öffnen?",
+                "Der Link funktioniert nur auf diesem PC, solange DEBATE AI läuft.\n" +
+                "Hinweis: TikTok LIVE Studio 1.40.2 lehnt lokale Links ab („Korrekte URL eingeben“). Dann „NOVA-Fenster für TikTok öffnen“ verwenden.\n\n" +
+                "Vorschau jetzt im Browser öffnen?",
                 "Stream-Overlay", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
             {
                 try { Process.Start(new ProcessStartInfo { FileName = overlay.Url, UseShellExecute = true }); } catch (Exception) { }
